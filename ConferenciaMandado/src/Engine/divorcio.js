@@ -1,6 +1,6 @@
 // ===== Motor de análise do mandado (roda 100% no computador) =====
 const MESES = 'janeiro|fevereiro|marco|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro';
-const RE_DATA = new RegExp('\\b\\d{1,2}\\s*[\\/.-]\\s*\\d{1,2}\\s*[\\/.-]\\s*\\d{2,4}\\b|\\b\\d{1,2}\\s*(?:o|º|°)?\\s+de\\s+(?:' + MESES + ')\\s+de\\s+\\d{4}\\b');
+const RE_DATA = new RegExp('(?<![\\d.\\/-])\\b\\d{1,2}\\s*[\\/.-]\\s*\\d{1,2}\\s*[\\/.-]\\s*\\d{2,4}\\b|(?<![\\d.\\/-])\\b\\d{1,2}\\s*(?:o|º|°)?\\s+de\\s+(?:' + MESES + ')\\s+de\\s+\\d{4}\\b');
 
 const JUNTA_HIFEN = /([A-Za-zÀ-ÿ])-[ \t]*\n\s*([A-Za-zÀ-ÿ])/g;
 function prepare(raw) {
@@ -222,9 +222,11 @@ function checkTransito(doc) {
     let ok = false;
     if (/^transit(?:ou|aram)\b/.test(palavra) || /nesta\s+data/.test(palavra)) ok = true;
     if (/\bcertifico\b/.test(antes)) ok = true;
-    const md = depois.slice(0, 45).match(RE_DATA);
+    let md = depois.slice(0, 45).match(RE_DATA);
+    if (md && !/^[\s,]*(?:em|na\s+data\s+de|no\s+dia|data|de)?\s*:?\s*$/.test(depois.slice(0, md.index))) md = null;
     if (md) { ok = true; const ds = h.e + md.index; datas.push(doc.orig.slice(doc.map[ds], doc.map[ds + md[0].length - 1] + 1).replace(/\s+/g, ' ')); }
     if (/nesta\s+data/.test(palavra) || /^\s*(?:nesta|na\s+presente)\s+data/.test(depois)) { ok = true; datas.push('na data da própria decisão (“nesta data”)'); }
+    if (/^\s*,?\s*na\s+(?:mesma\s+)?data\s+(?:em\s+que\s+(?:fora|foi)\s+(?:proferida|prolatada)|d[ae]\s+(?:sua\s+)?(?:prolacao|publicacao))/.test(depois)) { ok = true; datas.push('na data em que a sentença foi proferida'); }
     if (/certidao\s+de\s+$/.test(antes) && md) ok = true;
     if (/\b(?:apos|com\s+o|depois\s+do|quando\s+do|ate\s+o|antes\s+do|aguarde-se|aguardar)\s*(?:o\s+)?$/.test(antes) && !md && !/certifico/.test(antes)) ok = false;
     if (ok) confirmados.push(h);

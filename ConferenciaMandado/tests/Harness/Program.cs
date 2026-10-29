@@ -1,6 +1,33 @@
 using System; using System.IO; using System.Linq; using System.Diagnostics; using System.Collections.Generic; using ConferenciaMandado;
 var TIPO = Environment.GetEnvironmentVariable("TIPO") ?? "divorcio";
 // uso: Harness arquivo... (txt ou pdf)  |  Harness --grifar saida.pdf arquivo.pdf [mais.pdf]
+// Harness --caso pasta [saida-texto.txt]: confere todos os PDFs da pasta juntos; páginas escaneadas passam pelo tesseract (só no teste)
+if (args.Length > 0 && args[0] == "--caso") {
+  var dir = args[1]; var pags = new List<Pagina>();
+  var cacheDir = Path.Combine(Path.GetTempPath(), "ocr-cache"); Directory.CreateDirectory(cacheDir);
+  foreach (var f in Directory.GetFiles(dir).Where(Leitura.EhPdf).OrderBy(x => x)) {
+    var ps = Leitura.LerPdf(f, Path.GetFileName(f));
+    Console.WriteLine($"# {Path.GetFileName(f)}: {ps.Count} pág, escaneadas: {ps.Count(p => p.Escaneada)}");
+    foreach (var p in ps.Where(p => p.Escaneada)) {
+      var key = Path.Combine(cacheDir, Math.Abs((f + p.Numero).GetHashCode()) + "-" + new FileInfo(f).Length + ".txt");
+      if (!File.Exists(key)) {
+        var png = Path.Combine(cacheDir, "pg");
+        Process.Start(new ProcessStartInfo("pdftoppm", $"-r 200 -gray -png -singlefile -f {p.Numero} -l {p.Numero} \"{f}\" \"{png}\"") { UseShellExecute = false })!.WaitForExit();
+        Process.Start(new ProcessStartInfo("tesseract", $"\"{png}.png\" \"{key[..^4]}\" -l por") { UseShellExecute = false, RedirectStandardError = true })!.WaitForExit();
+      }
+      var t = File.ReadAllText(key); p.Texto = string.IsNullOrWhiteSpace(p.Texto) ? t : p.Texto + "\n" + t; p.LidaPorOcr = true;
+    }
+    pags.AddRange(ps);
+  }
+  var txt = Leitura.Juntar(pags);
+  if (args.Length > 2) File.WriteAllText(args[2], txt.Replace("\f", "\n<<<<<<<<<< PAGINA >>>>>>>>>>\n"));
+  var sw = Stopwatch.StartNew();
+  var r = Motor.Analisar(TIPO, txt, pags.Any(p => !p.Escaneada));
+  Console.WriteLine($"=== ({sw.ElapsedMilliseconds} ms)");
+  foreach (var it in r.Itens) { Console.WriteLine($"{it.Chave}|{it.Status}|{it.Resumo}"); foreach (var t in it.Trechos.Take(1)) Console.WriteLine($"   [{pags[Math.Min(t.Pagina, pags.Count-1)].Arquivo} p{pags[Math.Min(t.Pagina, pags.Count-1)].Numero}] {t.Antes}<<{t.Achado}>>{t.Depois}"); }
+  foreach (var e in r.Extras) Console.WriteLine($"extra|{e.Rotulo}|{e.Valor}");
+  return;
+}
 if (args.Length > 0 && args[0] == "--grifar") {
   var pags = new List<Pagina>(); var nomes = args.Skip(2).Select(Path.GetFileName).ToList();
   foreach (var f in args.Skip(2)) pags.AddRange(Leitura.LerPdf(f, Path.GetFileName(f)));
