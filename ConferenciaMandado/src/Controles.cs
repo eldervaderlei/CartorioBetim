@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Windows.Forms;
@@ -15,8 +17,10 @@ namespace ConferenciaMandado
 
         public static Color Hex(string h) => ColorTranslator.FromHtml(h);
 
-        public static Color DoStatus(string st) => st == "ok" || st == "sim" ? Ok : st == "confirmed" ? Conferido : st == "missing" ? Ruim : Aviso;
-        public static Color FundoDoStatus(string st) => st == "ok" || st == "sim" ? OkFundo : st == "confirmed" ? ConferidoFundo : st == "missing" ? RuimFundo : AvisoFundo;
+        public static readonly Color Neutro = Hex("#7a8487"), NeutroFundo = Hex("#eceae4");
+
+        public static Color DoStatus(string st) => st == "ok" || st == "sim" ? Ok : st == "confirmed" ? Conferido : st == "missing" ? Ruim : st == "na" ? Neutro : Aviso;
+        public static Color FundoDoStatus(string st) => st == "ok" || st == "sim" ? OkFundo : st == "confirmed" ? ConferidoFundo : st == "missing" ? RuimFundo : st == "na" ? NeutroFundo : AvisoFundo;
     }
 
     static class Escala
@@ -51,6 +55,7 @@ namespace ConferenciaMandado
         {
             if (c is Pilha || c is Cartao) { if (c.Width != w) c.Width = w; else c.PerformLayout(); return c.Height; }
             if (c is CaixaTrecho ct) return ct.AlturaConteudo;
+            if (c is Legenda lg) return lg.AlturaPara(w);
             if (c is Label l)
                 return TextRenderer.MeasureText(string.IsNullOrEmpty(l.Text) ? " " : l.Text, l.Font, new Size(w, int.MaxValue),
                     TextFormatFlags.WordBreak | TextFormatFlags.TextBoxControl).Height + l.Padding.Vertical;
@@ -123,6 +128,8 @@ namespace ConferenciaMandado
             {
                 if (Tipo == "ok" || Tipo == "sim" || Tipo == "confirmed")
                     g.DrawLines(p, new[] { new PointF(w * .28f, h * .52f), new PointF(w * .44f, h * .68f), new PointF(w * .73f, h * .35f) });
+                else if (Tipo == "na")
+                    g.DrawLine(p, w * .32f, h / 2, w * .68f, h / 2);
                 else if (Tipo == "missing")
                 { g.DrawLine(p, w * .33f, h * .33f, w * .67f, h * .67f); g.DrawLine(p, w * .67f, h * .33f, w * .33f, h * .67f); }
                 else
@@ -183,6 +190,45 @@ namespace ConferenciaMandado
             Select(0, 0);
             if (IsHandleCreated) BeginInvoke(new Action(Medir));
         }
+    }
+
+    // Quadradinhos com as cores usadas no PDF grifado
+    class Legenda : Control
+    {
+        readonly List<KeyValuePair<Color, string>> itens;
+        public Legenda(IEnumerable<KeyValuePair<Color, string>> cores)
+        {
+            itens = cores.ToList(); DoubleBuffered = true;
+            SetStyle(ControlStyles.SupportsTransparentBackColor, true);
+            BackColor = Color.Transparent;
+            Font = new Font("Segoe UI", 9.5f);
+        }
+
+        IEnumerable<KeyValuePair<Rectangle, int>> Posicoes(int w)
+        {
+            int x = 0, y = 0, q = Escala.D(14), alt = Escala.D(22);
+            for (int i = 0; i < itens.Count; i++)
+            {
+                int tw = q + Escala.D(6) + TextRenderer.MeasureText(itens[i].Value, Font).Width + Escala.D(16);
+                if (x > 0 && x + tw > w) { x = 0; y += alt; }
+                yield return new KeyValuePair<Rectangle, int>(new Rectangle(x, y, tw, alt), i);
+                x += tw;
+            }
+        }
+
+        public int AlturaPara(int w) => itens.Count == 0 ? 0 : Posicoes(w).Max(p => p.Key.Bottom);
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            int q = Escala.D(14);
+            foreach (var p in Posicoes(Width))
+            {
+                var r = p.Key; var it = itens[p.Value];
+                using (var b = new SolidBrush(it.Key)) e.Graphics.FillRectangle(b, r.X, r.Y + (r.Height - q) / 2, q, q);
+                TextRenderer.DrawText(e.Graphics, it.Value, Font, new Point(r.X + q + Escala.D(6), r.Y + (r.Height - Font.Height) / 2), Cores.Tinta);
+            }
+        }
+        protected override void OnResize(EventArgs e) { base.OnResize(e); Invalidate(); }
     }
 
     // Área tracejada para soltar o arquivo

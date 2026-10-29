@@ -24,13 +24,15 @@ namespace ConferenciaMandado
             bool multi = arquivos.Count > 1;
             var sb = new StringBuilder();
             sb.AppendLine("REGISTRO CIVIL DAS PESSOAS NATURAIS · BETIM/MG");
-            sb.AppendLine("Relatório de conferência — Mandado de divórcio");
+            var tipo = Motor.Tipos.FirstOrDefault(t => t.Chave == r.Tipo);
+            sb.AppendLine("Relatório de conferência — " + (tipo?.Nome ?? "Mandado"));
             sb.AppendLine("Conferido em " + DateTime.Now.ToString("dd/MM/yyyy HH:mm"));
             sb.AppendLine("Documento(s): " + string.Join("; ", arquivos));
             sb.AppendLine();
             var falta = r.Itens.Where(i => i.StatusEfetivo == "missing").ToList();
             var conf = r.Itens.Where(i => i.StatusEfetivo == "warn").ToList();
-            sb.AppendLine("RESULTADO: " + (falta.Count == 0 && conf.Count == 0 ? "APTO PARA AVERBAÇÃO (os 4 itens foram encontrados)"
+            string ato = r.Tipo == "interdicao" ? "REGISTRO" : "AVERBAÇÃO";
+            sb.AppendLine("RESULTADO: " + (falta.Count == 0 && conf.Count == 0 ? "APTO PARA " + ato + " (os itens exigidos foram encontrados)"
                 : falta.Count > 0 ? "PENDÊNCIAS — faltando: " + string.Join(", ", falta.Select(i => i.Rotulo.ToLowerInvariant())) + (conf.Count > 0 ? "; conferir: " + string.Join(", ", conf.Select(i => i.Rotulo.ToLowerInvariant())) : "")
                 : "CONFERIR — " + string.Join(", ", conf.Select(i => i.Rotulo.ToLowerInvariant()))));
             sb.AppendLine();
@@ -38,7 +40,7 @@ namespace ConferenciaMandado
             foreach (var it in r.Itens)
             {
                 string st = it.StatusEfetivo;
-                string marca = st == "ok" ? "[✔]" : st == "confirmed" ? "[✔ conferido manualmente]" : st == "missing" ? "[✘]" : "[! conferir]";
+                string marca = st == "ok" ? "[✔]" : st == "confirmed" ? "[✔ conferido manualmente]" : st == "missing" ? "[✘]" : st == "na" ? "[– não se aplica]" : "[! conferir]";
                 sb.AppendLine(n++ + ". " + it.Rotulo + "  " + marca);
                 sb.AppendLine("   " + it.Resumo);
                 if (!string.IsNullOrEmpty(it.Nota)) sb.AppendLine("   " + it.Nota);
@@ -48,12 +50,12 @@ namespace ConferenciaMandado
             }
             if (r.Justica.Status != "nao") { sb.AppendLine("Justiça gratuita: " + r.Justica.Resumo); sb.AppendLine(); }
             sb.AppendLine("Outras informações:");
-            if (r.Partes.Count > 0) sb.AppendLine("   Partes: " + string.Join(" e ", r.Partes));
-            if (r.NomesSolteiro.Count > 0) sb.AppendLine("   Nome a usar após o divórcio: " + string.Join(" · ", r.NomesSolteiro));
+            if (r.Tipo == "divorcio" && r.Partes.Count > 0) sb.AppendLine("   Partes: " + string.Join(" e ", r.Partes));
+            if (r.Tipo == "divorcio" && r.NomesSolteiro.Count > 0) sb.AppendLine("   Nome a usar após o divórcio: " + string.Join(" · ", r.NomesSolteiro));
             foreach (var e in r.Extras) sb.AppendLine("   " + e.Rotulo + ": " + (e.Achou ? e.Valor : "não encontrado"));
             if (!string.IsNullOrEmpty(r.Cartorio)) sb.AppendLine("   Cartório do casamento (cidade): " + r.Cartorio);
             sb.AppendLine();
-            sb.AppendLine("Conferência automática, de apoio. A qualificação do título e a decisão sobre a averbação cabem ao Oficial e aos escreventes.");
+            sb.AppendLine("Conferência automática, de apoio. A qualificação do título e a decisão sobre o registro/averbação cabem ao Oficial e aos escreventes.");
             return sb.ToString();
         }
 

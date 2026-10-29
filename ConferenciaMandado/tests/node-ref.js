@@ -1,4 +1,4 @@
-const m = require('../src/Engine/motor.js'); const fs = require('fs');
+const m = require('../src/Engine/divorcio.js'); const fs = require('fs');
 for (const f of process.argv.slice(2)) {
   const r = m.analisar(fs.readFileSync(f, 'utf8'));
   console.log('=== ' + require('path').basename(f));

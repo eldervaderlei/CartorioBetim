@@ -3,7 +3,7 @@
   <ItemGroup>
     <PackageReference Include="Jint" Version="4.4.1" />
     <PackageReference Include="PdfPig" Version="0.1.11" />
-    <Compile Include="../../src/Motor.cs" /><Compile Include="../../src/Leitura.cs" />
-    <EmbeddedResource Include="../../src/Engine/motor.js" LogicalName="motor.js" />
+    <Compile Include="../../src/Motor.cs" /><Compile Include="../../src/Leitura.cs" /><Compile Include="../../src/Grifo.cs" />
+    <EmbeddedResource Include="../../src/Engine/*.js" LogicalName="%(Filename)%(Extension)" />
   </ItemGroup>
 </Project>

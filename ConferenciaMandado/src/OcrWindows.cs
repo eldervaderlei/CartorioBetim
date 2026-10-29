@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -85,7 +86,7 @@ namespace ConferenciaMandado
                 using (var img = new InMemoryRandomAccessStream())
                 {
                     await pg.RenderToStreamAsync(img, opc);
-                    p.Texto = Juntar(p.Texto, await ReconhecerImagem(img, motor));
+                    Acrescentar(p, await ReconhecerImagem(img, motor));
                 }
             }
         }
@@ -94,24 +95,35 @@ namespace ConferenciaMandado
         {
             var motor = Motor();
             using (var fluxo = await Fluxo(p.Caminho))
-                p.Texto = await ReconhecerImagem(fluxo, motor);
+            {
+                p.Texto = ""; p.Geo.Clear();
+                Acrescentar(p, await ReconhecerImagem(fluxo, motor));
+            }
             p.LidaPorOcr = true;
         }
 
-        static string Juntar(string digital, string ocr) => string.IsNullOrWhiteSpace(digital) ? ocr : digital + "\n" + ocr;
+        class Lido { public string Texto = ""; public List<Glifo> Geo = new List<Glifo>(); public int Letras; }
 
-        static async Task<string> ReconhecerImagem(IRandomAccessStream img, OcrEngine motor)
+        // o texto do OCR entra depois do texto digital que a página já tinha (ex.: rodapé do PJe)
+        static void Acrescentar(Pagina p, Lido o)
+        {
+            int base_ = 0;
+            if (!string.IsNullOrWhiteSpace(p.Texto)) { p.Texto += "\n"; base_ = p.Texto.Length; } else { p.Texto = ""; p.Geo.Clear(); }
+            p.Texto += o.Texto;
+            foreach (var g in o.Geo) { g.Inicio += base_; g.Fim += base_; p.Geo.Add(g); }
+        }
+
+        static async Task<Lido> ReconhecerImagem(IRandomAccessStream img, OcrEngine motor)
         {
             img.Seek(0);
             var dec = await BitmapDecoder.CreateAsync(img);
-            string melhor = ""; int melhorLetras = -1;
+            Lido melhor = null;
             // página escaneada de lado ou de cabeça para baixo: tenta girar se quase nada for lido
             foreach (var giro in new[] { BitmapRotation.None, BitmapRotation.Clockwise90Degrees, BitmapRotation.Clockwise270Degrees, BitmapRotation.Clockwise180Degrees })
             {
-                string t = await Reconhecer(dec, giro, motor);
-                int letras = t.Count(char.IsLetter);
-                if (letras > melhorLetras) { melhor = t; melhorLetras = letras; }
-                if (letras >= 200 && PareceTexto(t)) break;
+                var t = await Reconhecer(dec, giro, motor);
+                if (melhor == null || t.Letras > melhor.Letras) melhor = t;
+                if (t.Letras >= 200 && PareceTexto(t.Texto)) break;
             }
             return melhor;
         }
@@ -124,7 +136,7 @@ namespace ConferenciaMandado
             return palavras.Length > 0 && comuns * 12 >= palavras.Length;
         }
 
-        static async Task<string> Reconhecer(BitmapDecoder dec, BitmapRotation giro, OcrEngine motor)
+        static async Task<Lido> Reconhecer(BitmapDecoder dec, BitmapRotation giro, OcrEngine motor)
         {
             // a escala é aplicada antes do giro, então vale para a imagem como está no arquivo
             uint w = dec.PixelWidth, h = dec.PixelHeight;
@@ -135,9 +147,39 @@ namespace ConferenciaMandado
             using (var bmp = await dec.GetSoftwareBitmapAsync(BitmapPixelFormat.Bgra8, BitmapAlphaMode.Premultiplied, tr, ExifOrientationMode.IgnoreExifOrientation, ColorManagementMode.DoNotColorManage))
             {
                 var r = await motor.RecognizeAsync(bmp);
+                double bw = bmp.PixelWidth, bh = bmp.PixelHeight;
+                var lido = new Lido();
                 var sb = new StringBuilder();
-                foreach (var linha in r.Lines) sb.Append(linha.Text).Append('\n');
-                return sb.ToString();
+                foreach (var linha in r.Lines)
+                {
+                    bool primeira = true;
+                    foreach (var pal in linha.Words)
+                    {
+                        if (!primeira) sb.Append(' ');
+                        primeira = false;
+                        int ini = sb.Length; sb.Append(pal.Text);
+                        // caixa da palavra na imagem girada -> frações da página original
+                        var b = pal.BoundingRect;
+                        double u0 = 1, v0 = 1, u1 = 0, v1 = 0;
+                        foreach (var (X, Y) in new[] { (b.X, b.Y), (b.X + b.Width, b.Y + b.Height) })
+                        {
+                            double fx = X / bw, fy = Y / bh, u, v;
+                            switch (giro)
+                            {
+                                case BitmapRotation.Clockwise90Degrees: u = fy; v = 1 - fx; break;
+                                case BitmapRotation.Clockwise270Degrees: u = 1 - fy; v = fx; break;
+                                case BitmapRotation.Clockwise180Degrees: u = 1 - fx; v = 1 - fy; break;
+                                default: u = fx; v = fy; break;
+                            }
+                            u0 = Math.Min(u0, u); u1 = Math.Max(u1, u); v0 = Math.Min(v0, v); v1 = Math.Max(v1, v);
+                        }
+                        lido.Geo.Add(new Glifo { Inicio = ini, Fim = sb.Length, X0 = u0, Y0 = v0, X1 = u1, Y1 = v1, Fracao = true });
+                    }
+                    sb.Append('\n');
+                }
+                lido.Texto = sb.ToString();
+                lido.Letras = lido.Texto.Count(char.IsLetter);
+                return lido;
             }
         }
     }

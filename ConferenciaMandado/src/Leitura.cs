@@ -5,6 +5,7 @@ using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
 using UglyToad.PdfPig;
+using UglyToad.PdfPig.Content;
 using UglyToad.PdfPig.DocumentLayoutAnalysis.TextExtractor;
 
 namespace ConferenciaMandado
@@ -18,6 +19,18 @@ namespace ConferenciaMandado
         public string Texto = "";
         public bool Escaneada;      // sem texto digital: precisa de OCR
         public bool LidaPorOcr;
+        public bool OcrTentado;
+        public int Inicio;          // onde o texto desta página começa no texto juntado
+        public List<Glifo> Geo = new List<Glifo>(); // posição de cada letra/palavra, para o PDF grifado
+    }
+
+    // Trecho [Inicio, Fim) do texto da página e o retângulo onde ele está.
+    // Fracao = false: coordenadas do PDF (pontos). Fracao = true: frações da página como ela aparece (0..1, origem no canto superior esquerdo), vindas do OCR.
+    public class Glifo
+    {
+        public int Inicio, Fim;
+        public double X0, Y0, X1, Y1;
+        public bool Fracao;
     }
 
     public static class Leitura
@@ -42,20 +55,68 @@ namespace ConferenciaMandado
                 int n = pdf.NumberOfPages;
                 for (int i = 1; i <= n; i++)
                 {
-                    string t = "";
-                    try
-                    {
-                        var pg = pdf.GetPage(i);
-                        try { t = ContentOrderTextExtractor.GetText(pg); }
-                        catch { t = pg.Text; }
-                    }
-                    catch { t = ""; }
-                    t = Limpar(t);
-                    paginas.Add(new Pagina { Arquivo = nome, Caminho = caminho, Numero = i, Total = n, Texto = t, Escaneada = LetrasUteis(t) < 60 });
+                    var pagina = new Pagina { Arquivo = nome, Caminho = caminho, Numero = i, Total = n };
+                    try { TextoComPosicoes(pdf.GetPage(i), pagina); }
+                    catch { pagina.Texto = ""; pagina.Geo.Clear(); }
+                    pagina.Escaneada = LetrasUteis(pagina.Texto) < 60;
+                    paginas.Add(pagina);
                 }
             }
             return paginas;
         }
+
+        // Monta o texto da página na ordem em que as letras aparecem no PDF (como o leitor da versão anterior),
+        // guardando a posição de cada letra
+        static void TextoComPosicoes(Page pg, Pagina pagina)
+        {
+            var sb = new StringBuilder();
+            // a página como aparece (o PdfPig já entrega as letras na orientação de exibição)
+            var cx = pg.CropBox.Bounds;
+            double W = Math.Max(1, cx.Width), H = Math.Max(1, cx.Height);
+            Letter ant = null; double antRx = 0, antRy = 0, antFim = 0;
+            foreach (var l in pg.Letters)
+            {
+                string v = Limpar(l.Value);
+                if (v.Length == 0) continue;
+                double fs = l.PointSize > 0.5 ? l.PointSize : Math.Max(1, l.GlyphRectangle.Height);
+                bool vazio = string.IsNullOrWhiteSpace(v);
+                // eixo de leitura da letra (texto na horizontal, na vertical ou de cabeça para baixo)
+                double dx = l.EndBaseLine.X - l.StartBaseLine.X, dy = l.EndBaseLine.Y - l.StartBaseLine.Y, len = Math.Sqrt(dx * dx + dy * dy);
+                double c = 1, s = 0;
+                if (len > 0.01) { c = dx / len; s = dy / len; }
+                else if (ant != null) { double adx = ant.EndBaseLine.X - ant.StartBaseLine.X, ady = ant.EndBaseLine.Y - ant.StartBaseLine.Y, al = Math.Sqrt(adx * adx + ady * ady); if (al > 0.01) { c = adx / al; s = ady / al; } }
+                double rx = l.StartBaseLine.X * c + l.StartBaseLine.Y * s, ry = -l.StartBaseLine.X * s + l.StartBaseLine.Y * c;
+                double rxFim = l.EndBaseLine.X * c + l.EndBaseLine.Y * s;
+                if (ant != null)
+                {
+                    double fsA = ant.PointSize > 0.5 ? ant.PointSize : fs;
+                    // posição da letra anterior no mesmo eixo
+                    double pRy = -ant.StartBaseLine.X * s + ant.StartBaseLine.Y * c, pFim = ant.EndBaseLine.X * c + ant.EndBaseLine.Y * s;
+                    double salto = Math.Abs(ry - pRy), gap = rx - pFim;
+                    if (salto > Math.Min(fs, fsA) * 0.5) { if (sb.Length > 0 && sb[sb.Length - 1] != '\n') { TirarEspacoFinal(sb); sb.Append('\n'); } }
+                    else if ((gap > fs * 0.15 || gap < -fs * 1.5) && !vazio && sb.Length > 0 && !char.IsWhiteSpace(sb[sb.Length - 1])) sb.Append(' ');
+                }
+                if (vazio) { if (sb.Length > 0 && !char.IsWhiteSpace(sb[sb.Length - 1])) sb.Append(' '); }
+                else
+                {
+                    int ini = sb.Length; sb.Append(v);
+                    if (rxFim - rx < 0.1) rxFim = rx + fs * 0.5;
+                    // caixa da letra no eixo de leitura, levada de volta para a página
+                    double u0 = 1, v0 = 1, u1 = 0, v1 = 0;
+                    foreach (var (px, py) in new[] { (rx, ry - fs * 0.22), (rxFim, ry - fs * 0.22), (rx, ry + fs * 0.8), (rxFim, ry + fs * 0.8) })
+                    {
+                        double x = px * c - py * s, y = px * s + py * c;
+                        double u = (x - cx.Left) / W, vv = (cx.Top - y) / H;
+                        u0 = Math.Min(u0, u); u1 = Math.Max(u1, u); v0 = Math.Min(v0, vv); v1 = Math.Max(v1, vv);
+                    }
+                    pagina.Geo.Add(new Glifo { Inicio = ini, Fim = sb.Length, X0 = u0, Y0 = v0, X1 = u1, Y1 = v1, Fracao = true });
+                }
+                ant = l;
+            }
+            pagina.Texto = sb.ToString();
+        }
+
+        static void TirarEspacoFinal(StringBuilder sb) { while (sb.Length > 0 && sb[sb.Length - 1] == ' ') sb.Length--; }
 
         public static string Limpar(string t)
         {
@@ -74,6 +135,7 @@ namespace ConferenciaMandado
                 var p = paginas[k];
                 if (k > 0) sb.Append('\f');
                 if (multi && p.Arquivo != ant) sb.Append("===== ").Append(p.Arquivo).Append(" =====\n");
+                p.Inicio = sb.Length;
                 sb.Append(p.Texto); ant = p.Arquivo;
             }
             return sb.ToString();

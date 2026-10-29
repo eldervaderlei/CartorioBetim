@@ -28,7 +28,7 @@
     <Reference Include="System.Runtime.InteropServices.WindowsRuntime" />
   </ItemGroup>
   <ItemGroup>
-    <EmbeddedResource Include="Engine\motor.js" LogicalName="motor.js" />
+    <EmbeddedResource Include="Engine\*.js" LogicalName="%(Filename)%(Extension)" />
   </ItemGroup>
   <!-- embute as DLLs das bibliotecas no .exe (carregadas por Program.Resolver) -->
   <Target Name="EmbutirBibliotecas" AfterTargets="ResolveAssemblyReferences">

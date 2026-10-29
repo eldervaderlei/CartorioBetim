@@ -1,10 +1,13 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Drawing;
+using System.Drawing.Imaging;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+using Microsoft.Win32;
 
 namespace ConferenciaMandado
 {
@@ -13,19 +16,28 @@ namespace ConferenciaMandado
         readonly Panel rolagem = new Panel { Dock = DockStyle.Fill, AutoScroll = true, BackColor = Cores.Fundo };
         readonly Pilha raiz = new Pilha { Espaco = 12, BackColor = Cores.Fundo };
         readonly FlowLayoutPanel barra = new FlowLayoutPanel { Dock = DockStyle.Top, WrapContents = false, BackColor = Cores.Fundo };
-        Botao bAbrir, bAdicionar, bCopiar, bImprimir, bTexto, bNova;
+        Botao bAdicionar, bVoltar, bGrifado, bCopiar, bImprimir, bTexto, bNova;
 
-        // estado da conferência
+        // arquivos escolhidos (na ordem), o nome exibido de cada um e as páginas já lidas
+        readonly List<string> fila = new List<string>();
+        readonly Dictionary<string, string> nomeDe = new Dictionary<string, string>();
+        readonly Dictionary<string, List<Pagina>> lidas = new Dictionary<string, List<Pagina>>();
+        string tipo = "divorcio";
+
+        // última conferência
         readonly List<Pagina> paginas = new List<Pagina>();
         readonly List<string> arquivos = new List<string>();
         Resultado resultado;
-        string textoLido = "";
         bool ocupado;
         readonly List<string> avisos = new List<string>();
+        enum Tela { Inicio, Fila, Progresso, Resultado }
+        Tela tela;
+
+        const string ChaveRegistro = @"Software\RCPN Betim\Conferencia de Mandados";
 
         public JanelaPrincipal(string[] args)
         {
-            Text = "Conferência de Mandado de Divórcio — RCPN Betim/MG";
+            Text = "Conferência de Mandados — RCPN Betim/MG";
             Font = new Font("Segoe UI", 10f);
             AutoScaleMode = AutoScaleMode.None;
             using (var g = CreateGraphics()) Escala.K = g.DpiX / 96f;
@@ -35,19 +47,22 @@ namespace ConferenciaMandado
             StartPosition = FormStartPosition.CenterScreen;
             try { Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch { }
             KeyPreview = true;
+            tipo = LerTipoSalvo();
 
             var cab = new Cabecalho { Dock = DockStyle.Top, Height = Escala.D(84) };
             barra.Height = Escala.D(52);
             barra.Padding = new Padding(Escala.D(24), Escala.D(10), Escala.D(24), 0);
-            bAbrir = new Botao("Abrir PDF…", true);
-            bAdicionar = new Botao("Adicionar arquivo…");
+            bAdicionar = new Botao("Adicionar arquivos…", true);
+            bVoltar = new Botao("Voltar ao resultado");
+            bGrifado = new Botao("Baixar PDF grifado", true);
             bCopiar = new Botao("Copiar relatório");
             bImprimir = new Botao("Imprimir relatório");
             bTexto = new Botao("Ver texto lido");
             bNova = new Botao("Nova conferência");
-            barra.Controls.AddRange(new Control[] { bAbrir, bAdicionar, bCopiar, bImprimir, bTexto, bNova });
-            bAbrir.Click += (s, e) => EscolherArquivos(false);
-            bAdicionar.Click += (s, e) => EscolherArquivos(true);
+            barra.Controls.AddRange(new Control[] { bAdicionar, bVoltar, bGrifado, bCopiar, bImprimir, bTexto, bNova });
+            bAdicionar.Click += (s, e) => EscolherArquivos();
+            bVoltar.Click += (s, e) => MostrarResultado();
+            bGrifado.Click += (s, e) => BaixarGrifado();
             bCopiar.Click += (s, e) => { Clipboard.SetText(Relatorio.Texto(resultado, arquivos, paginas)); MessageBox.Show(this, "Relatório copiado. Cole onde quiser (Ctrl+V).", Text, MessageBoxButtons.OK, MessageBoxIcon.Information); };
             bImprimir.Click += (s, e) => Relatorio.Imprimir(this, resultado, arquivos, paginas);
             bTexto.Click += (s, e) => new JanelaTexto(paginas, arquivos.Count > 1).ShowDialog(this);
@@ -61,31 +76,44 @@ namespace ConferenciaMandado
             Controls.Add(cab);
 
             HabilitarSoltar(this);
-            ControlAdded += (s, e) => HabilitarSoltar(e.Control);
 
-            KeyDown += (s, e) => { if (e.Control && e.KeyCode == Keys.O && !ocupado) { EscolherArquivos(false); e.Handled = true; } };
+            KeyDown += (s, e) => { if (e.Control && e.KeyCode == Keys.O && !ocupado) { EscolherArquivos(); e.Handled = true; } };
 
             MostrarInicio();
             var iniciais = (args ?? new string[0]).Where(File.Exists).ToArray();
-            if (iniciais.Length > 0) Shown += (s, e) => BeginInvoke(new Action(async () => await Processar(iniciais, false)));
+            if (iniciais.Length > 0) Shown += (s, e) => BeginInvoke(new Action(() => Adicionar(iniciais)));
+        }
+
+        static string LerTipoSalvo()
+        {
+            try { using (var k = Registry.CurrentUser.OpenSubKey(ChaveRegistro)) { var v = k?.GetValue("Tipo") as string; if (Motor.Tipos.Any(t => t.Chave == v)) return v; } } catch { }
+            return "divorcio";
+        }
+
+        static void SalvarTipo(string t)
+        {
+            try { using (var k = Registry.CurrentUser.CreateSubKey(ChaveRegistro)) k?.SetValue("Tipo", t); } catch { }
         }
 
         void AjustarLargura()
         {
             int w = rolagem.ClientSize.Width;
-            int max = Escala.D(1000);
-            raiz.Width = Math.Min(w, max);
+            raiz.Width = Math.Min(w, Escala.D(1000));
             raiz.Left = Math.Max(0, (w - raiz.Width) / 2);
             raiz.PerformLayout();
         }
 
         void AtualizarBotoes()
         {
-            bool tem = resultado != null && !ocupado;
-            bAbrir.Enabled = !ocupado;
-            bAdicionar.Visible = bCopiar.Visible = bImprimir.Visible = bTexto.Visible = bNova.Visible = resultado != null;
-            bAdicionar.Enabled = bCopiar.Enabled = bImprimir.Enabled = bTexto.Enabled = bNova.Enabled = tem;
+            bool res = tela == Tela.Resultado;
+            bAdicionar.Visible = true; bAdicionar.Enabled = !ocupado;
+            bVoltar.Visible = tela == Tela.Fila && resultado != null && MesmaFila() && resultado.Tipo == tipo;
+            bGrifado.Visible = bCopiar.Visible = bImprimir.Visible = bTexto.Visible = res;
+            bNova.Visible = tela == Tela.Resultado || tela == Tela.Fila;
+            foreach (Control b in barra.Controls) if (b != bAdicionar) b.Enabled = !ocupado;
         }
+
+        bool MesmaFila() => arquivos.SequenceEqual(fila.Select(f => nomeDe[f]));
 
         // ---------- arrastar e soltar ----------
         void HabilitarSoltar(Control c)
@@ -105,100 +133,106 @@ namespace ConferenciaMandado
             MarcarZona(e.Effect == DragDropEffects.Copy);
         }
 
-        async void AoSoltar(object s, DragEventArgs e)
+        void AoSoltar(object s, DragEventArgs e)
         {
             MarcarZona(false);
             if (ocupado || !(e.Data.GetData(DataFormats.FileDrop) is string[] lista)) return;
-            // com uma conferência aberta, o que for solto entra junto (ex.: a certidão de trânsito em julgado)
-            bool adicionar = false;
-            if (resultado != null)
-            {
-                var r = MessageBox.Show(this, "Juntar este(s) arquivo(s) à conferência aberta?\n\nSim: adiciona aos documentos já lidos (ex.: a certidão de trânsito em julgado).\nNão: começa uma nova conferência.",
-                    Text, MessageBoxButtons.YesNoCancel, MessageBoxIcon.Question);
-                if (r == DialogResult.Cancel) return;
-                adicionar = r == DialogResult.Yes;
-            }
-            await Processar(lista, adicionar);
+            BeginInvoke(new Action(() => Adicionar(lista)));
         }
 
         ZonaSoltar zona;
-        void MarcarZona(bool sobre) { if (zona != null && zona.Sobre != sobre) { zona.Sobre = sobre; zona.Invalidate(); } }
+        void MarcarZona(bool sobre) { if (zona != null && !zona.IsDisposed && zona.Sobre != sobre) { zona.Sobre = sobre; zona.Invalidate(); } }
 
-        async void EscolherArquivos(bool adicionar)
+        void EscolherArquivos()
         {
             if (ocupado) return;
             using (var d = new OpenFileDialog
             {
-                Title = adicionar ? "Adicionar arquivo à conferência" : "Abrir mandado de divórcio",
-                Filter = "PDF ou imagem do mandado|*.pdf;*.jpg;*.jpeg;*.png;*.tif;*.tiff;*.bmp|PDF (*.pdf)|*.pdf|Imagens|*.jpg;*.jpeg;*.png;*.tif;*.tiff;*.bmp",
+                Title = "Adicionar arquivos à conferência",
+                Filter = "PDF ou imagem|*.pdf;*.jpg;*.jpeg;*.png;*.tif;*.tiff;*.bmp|PDF (*.pdf)|*.pdf|Imagens|*.jpg;*.jpeg;*.png;*.tif;*.tiff;*.bmp",
                 Multiselect = true
             })
             {
                 if (d.ShowDialog(this) != DialogResult.OK) return;
-                await Processar(d.FileNames, adicionar);
+                Adicionar(d.FileNames);
             }
+        }
+
+        // põe os arquivos na lista; a conferência só começa quando a pessoa clicar em "Conferir agora"
+        void Adicionar(string[] lista)
+        {
+            var validos = lista.Where(f => File.Exists(f) && Leitura.Aceita(f)).ToList();
+            var recusados = lista.Where(f => !validos.Contains(f)).Select(Path.GetFileName).ToList();
+            foreach (var f in validos)
+            {
+                if (fila.Any(x => string.Equals(x, f, StringComparison.OrdinalIgnoreCase))) continue;
+                fila.Add(f);
+                nomeDe[f] = NomeUnico(Path.GetFileName(f));
+            }
+            if (recusados.Count > 0)
+                MessageBox.Show(this, "Só é possível adicionar PDF ou imagem (JPG, PNG, TIFF, BMP). Ficaram de fora:\n\n" + string.Join("\n", recusados), Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            if (fila.Count > 0) MostrarFila();
+        }
+
+        string NomeUnico(string n)
+        {
+            var usados = new HashSet<string>(nomeDe.Values);
+            if (!usados.Contains(n)) return n;
+            string b = Path.GetFileNameWithoutExtension(n), x = Path.GetExtension(n); int i = 2;
+            while (usados.Contains(b + " (" + i + ")" + x)) i++;
+            return b + " (" + i + ")" + x;
+        }
+
+        void Remover(string caminho)
+        {
+            fila.Remove(caminho); nomeDe.Remove(caminho); lidas.Remove(caminho);
+            if (fila.Count == 0 && resultado == null) MostrarInicio(); else MostrarFila();
         }
 
         void NovaConferencia()
         {
-            paginas.Clear(); arquivos.Clear(); resultado = null; textoLido = ""; avisos.Clear();
+            fila.Clear(); nomeDe.Clear(); lidas.Clear();
+            paginas.Clear(); arquivos.Clear(); resultado = null; avisos.Clear();
             MostrarInicio();
         }
 
-        // ---------- leitura ----------
-        string NomeUnico(string n)
+        // ---------- leitura e conferência ----------
+        async Task Conferir()
         {
-            if (!arquivos.Contains(n)) return n;
-            string b = Path.GetFileNameWithoutExtension(n), x = Path.GetExtension(n); int i = 2;
-            while (arquivos.Contains(b + " (" + i + ")" + x)) i++;
-            return b + " (" + i + ")" + x;
-        }
-
-        async Task Processar(string[] lista, bool adicionar)
-        {
-            var validos = lista.Where(f => File.Exists(f) && Leitura.Aceita(f)).ToArray();
-            if (validos.Length == 0)
-            {
-                MessageBox.Show(this, "Escolha um arquivo PDF (ou uma foto/escaneamento JPG, PNG ou TIFF) do mandado.", Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                return;
-            }
-            var antesPaginas = paginas.ToList(); var antesArquivos = arquivos.ToList(); var antesAvisos = avisos.ToList();
-            var antesResultado = resultado;
-            if (!adicionar) { paginas.Clear(); arquivos.Clear(); avisos.Clear(); }
-
-            ocupado = true; AtualizarBotoes();
-            var tela = MostrarProgresso();
+            if (ocupado || fila.Count == 0) return;
+            ocupado = true;
+            var tp = MostrarProgresso();
             var falhas = new List<string>();
             try
             {
-                var novas = new List<Pagina>();
-                for (int i = 0; i < validos.Length; i++)
+                var lista = fila.ToList();
+                for (int i = 0; i < lista.Count; i++)
                 {
-                    string f = validos[i], nome = NomeUnico(Path.GetFileName(f));
-                    tela.Definir("Lendo " + nome + "…", (double)i / validos.Length);
+                    string f = lista[i], nome = nomeDe[f];
+                    if (lidas.ContainsKey(f)) continue;
+                    tp.Definir("Lendo " + nome + "…", (double)i / lista.Count);
                     try
                     {
-                        List<Pagina> pgs;
-                        if (Leitura.EhPdf(f)) pgs = await Task.Run(() => Leitura.LerPdf(f, nome));
-                        else pgs = new List<Pagina> { new Pagina { Arquivo = nome, Caminho = f, EhImagem = true, Numero = 1, Total = 1, Escaneada = true } };
-                        arquivos.Add(nome); novas.AddRange(pgs); paginas.AddRange(pgs);
+                        if (Leitura.EhPdf(f)) lidas[f] = await Task.Run(() => Leitura.LerPdf(f, nome));
+                        else lidas[f] = new List<Pagina> { new Pagina { Arquivo = nome, Caminho = f, EhImagem = true, Numero = 1, Total = 1, Escaneada = true } };
                     }
                     catch (Exception ex)
                     {
                         falhas.Add(nome + ": " + Explicar(ex));
+                        fila.Remove(f); nomeDe.Remove(f);
                     }
                 }
 
-                // páginas escaneadas: OCR do Windows
-                var esc = novas.Where(p => p.Escaneada).ToList();
+                // páginas escaneadas ainda não lidas: OCR do Windows
+                var esc = fila.SelectMany(f => lidas[f]).Where(p => p.Escaneada && !p.OcrTentado).ToList();
                 if (esc.Count > 0)
                 {
                     int feitas = 0;
-                    tela.Titulo("Reconhecendo o texto das páginas escaneadas…");
-                    tela.Definir("Página 1 de " + esc.Count, 0);
+                    tp.Titulo("Reconhecendo o texto das páginas escaneadas…");
+                    tp.Definir("Página 1 de " + esc.Count, 0);
                     try
                     {
-                        string idioma = await LerEscaneadas(esc, () => { feitas++; Reportar(tela, feitas, esc.Count); });
+                        string idioma = await LerEscaneadas(esc, () => { feitas++; Reportar(tp, feitas, esc.Count); });
                         if (!idioma.StartsWith("pt", StringComparison.OrdinalIgnoreCase))
                             Avisar("O OCR do Windows está usando o idioma “" + idioma + "”, porque o reconhecimento de texto em português não está instalado. Acentos podem sair errados. Para instalar: Configurações > Hora e idioma > Idioma > Português (Brasil) > Opções > Reconhecimento óptico de caracteres (Baixar).");
                     }
@@ -206,23 +240,30 @@ namespace ConferenciaMandado
                     {
                         Avisar("Não foi possível fazer o reconhecimento de texto (OCR) das páginas escaneadas: " + Explicar(ex));
                     }
+                    foreach (var p in esc) p.OcrTentado = true;
                 }
 
-                textoLido = Leitura.Juntar(paginas);
-                if (Leitura.LetrasUteis(textoLido) < 30)
+                var pgs = fila.SelectMany(f => lidas[f]).ToList();
+                string texto = Leitura.Juntar(pgs);
+                if (Leitura.LetrasUteis(texto) < 30)
                 {
-                    string m = falhas.Count > 0 ? "Não consegui ler o(s) arquivo(s):\n\n" + string.Join("\n", falhas)
-                        : "Não foi possível ler texto neste documento. Se for um escaneamento ou foto, tente uma imagem mais nítida, bem iluminada e reta.";
+                    string m = falhas.Count > 0 && fila.Count == 0 ? "Não consegui ler o(s) arquivo(s):\n\n" + string.Join("\n", falhas)
+                        : "Não foi possível ler texto nestes documentos. Se for um escaneamento ou foto, tente uma imagem mais nítida, bem iluminada e reta.";
                     if (avisos.Count > 0) m += "\n\n" + string.Join("\n\n", avisos);
-                    Restaurar(antesPaginas, antesArquivos, antesAvisos, antesResultado);
+                    ocupado = false;
+                    if (fila.Count > 0) MostrarFila(); else MostrarInicio();
                     MessageBox.Show(this, m, Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
                     return;
                 }
 
-                tela.Titulo("Conferindo os itens do mandado…");
-                tela.Definir("Analisando o texto", 1);
-                string t = textoLido;
-                resultado = await Task.Run(() => Motor.Analisar(t));
+                tp.Titulo("Conferindo os itens…");
+                tp.Definir("Analisando o texto", 1);
+                bool digital = pgs.Any(p => !p.Escaneada);
+                string t = tipo;
+                var r = await Task.Run(() => Motor.Analisar(t, texto, digital));
+                paginas.Clear(); paginas.AddRange(pgs);
+                arquivos.Clear(); arquivos.AddRange(fila.Select(f => nomeDe[f]));
+                resultado = r;
                 ocupado = false;
                 MostrarResultado();
                 if (falhas.Count > 0)
@@ -230,8 +271,9 @@ namespace ConferenciaMandado
             }
             catch (Exception ex)
             {
-                Restaurar(antesPaginas, antesArquivos, antesAvisos, antesResultado);
-                MessageBox.Show(this, "Não consegui ler o documento: " + Explicar(ex), Text, MessageBoxButtons.OK, MessageBoxIcon.Error);
+                ocupado = false;
+                MostrarFila();
+                MessageBox.Show(this, "Não consegui conferir os documentos: " + Explicar(ex), Text, MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
             finally
             {
@@ -259,17 +301,9 @@ namespace ConferenciaMandado
 
         void Avisar(string m) { if (!avisos.Contains(m)) avisos.Add(m); }
 
-        void Restaurar(List<Pagina> pg, List<string> arq, List<string> av, Resultado r)
+        void Reportar(TelaProgresso tp, int feitas, int total)
         {
-            paginas.Clear(); paginas.AddRange(pg); arquivos.Clear(); arquivos.AddRange(arq); avisos.Clear(); avisos.AddRange(av);
-            resultado = r; textoLido = Leitura.Juntar(paginas);
-            ocupado = false;
-            if (r != null) MostrarResultado(); else MostrarInicio();
-        }
-
-        void Reportar(TelaProgresso tela, int feitas, int total)
-        {
-            BeginInvoke(new Action(() => tela.Definir(feitas < total ? "Página " + (feitas + 1) + " de " + total : "Concluído", (double)feitas / total)));
+            BeginInvoke(new Action(() => tp.Definir(feitas < total ? "Página " + (feitas + 1) + " de " + total : "Concluído", (double)feitas / total)));
         }
 
         static string Explicar(Exception ex)
@@ -278,6 +312,96 @@ namespace ConferenciaMandado
             if (ex.GetType().Name.Contains("Password") || m.IndexOf("password", StringComparison.OrdinalIgnoreCase) >= 0 || m.IndexOf("encrypt", StringComparison.OrdinalIgnoreCase) >= 0)
                 return "o PDF está protegido por senha. Salve uma cópia sem senha e tente de novo.";
             return m;
+        }
+
+        // ---------- PDF grifado ----------
+        async void BaixarGrifado()
+        {
+            if (resultado == null || ocupado) return;
+            var caminhoDe = fila.Where(f => nomeDe.ContainsKey(f)).ToDictionary(f => nomeDe[f], f => f);
+            var alvos = arquivos.Where(caminhoDe.ContainsKey).ToList();
+            if (alvos.Count == 0) return;
+
+            var destinos = new Dictionary<string, string>();
+            if (alvos.Count == 1)
+            {
+                string orig = caminhoDe[alvos[0]];
+                using (var d = new SaveFileDialog
+                {
+                    Title = "Salvar PDF grifado",
+                    Filter = "PDF (*.pdf)|*.pdf",
+                    FileName = Path.GetFileNameWithoutExtension(alvos[0]) + " - grifado.pdf",
+                    InitialDirectory = Path.GetDirectoryName(orig),
+                    OverwritePrompt = true
+                })
+                {
+                    if (d.ShowDialog(this) != DialogResult.OK) return;
+                    destinos[alvos[0]] = d.FileName;
+                }
+            }
+            else
+            {
+                using (var d = new FolderBrowserDialog { Description = "Escolha a pasta onde salvar os " + alvos.Count + " PDFs grifados", SelectedPath = Path.GetDirectoryName(caminhoDe[alvos[0]]) })
+                {
+                    if (d.ShowDialog(this) != DialogResult.OK) return;
+                    foreach (var a in alvos)
+                    {
+                        string b = Path.Combine(d.SelectedPath, Path.GetFileNameWithoutExtension(a) + " - grifado"), n = b + ".pdf"; int i = 2;
+                        while (File.Exists(n) || destinos.ContainsValue(n)) n = b + " (" + i++ + ").pdf";
+                        destinos[a] = n;
+                    }
+                }
+            }
+
+            ocupado = true; AtualizarBotoes(); Cursor = Cursors.WaitCursor;
+            var erros = new List<string>(); var semGrifo = new List<string>();
+            try
+            {
+                var r = resultado; var pgs = paginas.ToList();
+                foreach (var a in alvos)
+                {
+                    string orig = caminhoDe[a], dest = destinos[a];
+                    try
+                    {
+                        var dq = Grifo.Destaques(r, pgs, a);
+                        if (dq.Count == 0) semGrifo.Add(a);
+                        await Task.Run(() =>
+                        {
+                            byte[] pdf = Leitura.EhPdf(orig) ? File.ReadAllBytes(orig) : ImagemComoPdf(orig);
+                            File.WriteAllBytes(dest, Grifo.Grifar(pdf, dq));
+                        });
+                    }
+                    catch (Exception ex) { erros.Add(a + ": " + Explicar(ex)); destinos.Remove(a); }
+                }
+            }
+            finally { ocupado = false; AtualizarBotoes(); Cursor = Cursors.Default; }
+
+            string msg = destinos.Count == 0 ? "" : destinos.Count == 1 ? "PDF grifado salvo em:\n" + destinos.Values.First() : destinos.Count + " PDFs grifados salvos em:\n" + Path.GetDirectoryName(destinos.Values.First());
+            if (semGrifo.Count > 0) msg += "\n\nNenhum trecho foi encontrado em: " + string.Join(", ", semGrifo) + " (salvo sem grifos).";
+            if (erros.Count > 0) msg += "\n\nNão foi possível gerar:\n" + string.Join("\n", erros);
+            if (destinos.Count == 0) { MessageBox.Show(this, msg.Trim(), Text, MessageBoxButtons.OK, MessageBoxIcon.Warning); return; }
+            if (MessageBox.Show(this, msg + "\n\nAbrir agora?", Text, MessageBoxButtons.YesNo, MessageBoxIcon.Information) == DialogResult.Yes)
+            {
+                try
+                {
+                    if (destinos.Count == 1) Process.Start(new ProcessStartInfo(destinos.Values.First()) { UseShellExecute = true });
+                    else Process.Start("explorer.exe", "\"" + Path.GetDirectoryName(destinos.Values.First()) + "\"");
+                }
+                catch (Exception ex) { MessageBox.Show(this, "Não consegui abrir: " + ex.Message, Text); }
+            }
+        }
+
+        // foto ou escaneamento em imagem vira um PDF de uma página
+        static byte[] ImagemComoPdf(string caminho)
+        {
+            using (var img = Image.FromFile(caminho))
+            {
+                bool jpeg = img.RawFormat.Equals(ImageFormat.Jpeg);
+                byte[] dados;
+                if (jpeg) dados = File.ReadAllBytes(caminho);
+                else using (var ms = new MemoryStream()) { img.Save(ms, ImageFormat.Png); dados = ms.ToArray(); }
+                return Grifo.ImagemParaPdf(dados, !jpeg, img.Width, img.Height);
+            }
         }
 
         // ---------- telas ----------
@@ -289,8 +413,9 @@ namespace ConferenciaMandado
             zona = null;
         }
 
-        void Pronto()
+        void Pronto(Tela t)
         {
+            tela = t;
             raiz.ResumeLayout();
             AjustarLargura();
             rolagem.AutoScrollPosition = new Point(0, 0);
@@ -306,34 +431,114 @@ namespace ConferenciaMandado
         {
             Limpar();
             zona = new ZonaSoltar { Height = Escala.D(300), Margin = new Padding(0, Escala.D(16), 0, 0) };
-            var t1 = Rotulo("Arraste aqui o PDF do mandado", 15f, FontStyle.Bold);
-            var t2 = Rotulo("ou clique para escolher o arquivo. Aceita PDF com texto (do WhatsApp / PJe) e PDF escaneado ou foto do papel. Pode abrir vários arquivos juntos (segure Ctrl), por exemplo a sentença e a certidão de trânsito em julgado.", 10f, FontStyle.Regular, Cores.Apagado);
+            var t1 = Rotulo("Arraste aqui os PDFs do processo", 15f, FontStyle.Bold);
+            var t2 = Rotulo("ou clique para escolher. Pode juntar quantos arquivos quiser (sentença, mandado, termo, certidão de trânsito em julgado…) antes de conferir. Aceita PDF com texto (do WhatsApp / PJe) e PDF escaneado ou foto do papel.", 10f, FontStyle.Regular, Cores.Apagado);
             t1.TextAlign = t2.TextAlign = ContentAlignment.TopCenter;
-            var bt = new Botao("Abrir PDF…", true);
+            var bt = new Botao("Adicionar arquivos…", true);
             zona.Controls.AddRange(new Control[] { t1, t2, bt });
             zona.Resize += (s, e) =>
             {
-                int w = zona.Width - Escala.D(80);
+                int w = zona.Width - Escala.D(80), w2 = Math.Min(w, Escala.D(640));
                 t1.SetBounds(Escala.D(40), Escala.D(100), w, Escala.D(34));
-                int h2 = Pilha.Altura(t2, Math.Min(w, Escala.D(640)));
-                t2.SetBounds((zona.Width - Math.Min(w, Escala.D(640))) / 2, Escala.D(138), Math.Min(w, Escala.D(640)), h2);
+                int h2 = Pilha.Altura(t2, w2);
+                t2.SetBounds((zona.Width - w2) / 2, Escala.D(138), w2, h2);
                 bt.Location = new Point((zona.Width - bt.Width) / 2, t2.Bottom + Escala.D(16));
                 int alt = bt.Bottom + Escala.D(30);
                 if (zona.Height != alt) { zona.Height = alt; Pilha.Relayout(zona); }
             };
-            zona.Click += (s, e) => EscolherArquivos(false);
-            t1.Click += (s, e) => EscolherArquivos(false);
-            t2.Click += (s, e) => EscolherArquivos(false);
-            bt.Click += (s, e) => EscolherArquivos(false);
+            EventHandler abrir = (s, e) => EscolherArquivos();
+            zona.Click += abrir; t1.Click += abrir; t2.Click += abrir; bt.Click += abrir;
             raiz.Controls.Add(zona);
 
-            var itens = Rotulo("O programa confere os 4 itens essenciais para a averbação:   1. força de mandado   ·   2. nome que a parte voltará a assinar   ·   3. divisão de bens   ·   4. trânsito em julgado", 10f, FontStyle.Regular, Cores.Apagado);
-            itens.TextAlign = ContentAlignment.TopCenter;
-            raiz.Controls.Add(itens);
-            var priv = Rotulo("Tudo é feito neste computador, sem internet. O conteúdo dos mandados não é enviado para lugar nenhum e não fica salvo pelo programa.", 9f, FontStyle.Regular, Cores.Ok);
+            foreach (var tc in Motor.Tipos)
+            {
+                var l = Rotulo(tc.Nome + ": " + string.Join("  ·  ", tc.Itens), 9.5f, FontStyle.Regular, Cores.Apagado);
+                l.TextAlign = ContentAlignment.TopCenter;
+                raiz.Controls.Add(l);
+            }
+            var priv = Rotulo("Tudo é feito neste computador, sem internet. O conteúdo dos documentos não é enviado para lugar nenhum e não fica salvo pelo programa.", 9f, FontStyle.Regular, Cores.Ok);
             priv.TextAlign = ContentAlignment.TopCenter;
             raiz.Controls.Add(priv);
-            Pronto();
+            Pronto(Tela.Inicio);
+        }
+
+        Label itensTipo;
+
+        void MostrarFila()
+        {
+            Limpar();
+
+            // tipo de conferência
+            var ct = new Cartao { Margin = new Padding(0, Escala.D(8), 0, 0) };
+            ct.Corpo.Controls.Add(Rotulo("1. O que vai ser conferido?", 12f, FontStyle.Bold));
+            var linhaTipos = new FlowLayoutPanel { Height = Escala.D(34), BackColor = Color.Transparent, WrapContents = false };
+            foreach (var tc in Motor.Tipos)
+            {
+                var rb = new RadioButton { Text = tc.Nome, Checked = tc.Chave == tipo, AutoSize = true, Font = new Font("Segoe UI", 11f), Margin = new Padding(0, Escala.D(4), Escala.D(28), 0), Tag = tc.Chave };
+                rb.CheckedChanged += (s, e) =>
+                {
+                    if (!rb.Checked) return;
+                    tipo = (string)rb.Tag; SalvarTipo(tipo);
+                    itensTipo.Text = "Itens conferidos: " + string.Join("  ·  ", Motor.Tipos.First(x => x.Chave == tipo).Itens);
+                    itensTipo.Height = itensTipo.Height + 1;
+                    Pilha.Relayout(itensTipo);
+                    AtualizarBotoes();
+                };
+                linhaTipos.Controls.Add(rb);
+            }
+            ct.Corpo.Controls.Add(linhaTipos);
+            itensTipo = Rotulo("Itens conferidos: " + string.Join("  ·  ", Motor.Tipos.First(x => x.Chave == tipo).Itens), 9.5f, FontStyle.Regular, Cores.Apagado);
+            ct.Corpo.Controls.Add(itensTipo);
+            raiz.Controls.Add(ct);
+
+            // arquivos
+            var ca = new Cartao();
+            ca.Corpo.Controls.Add(Rotulo("2. Arquivos para conferir (" + fila.Count + ")", 12f, FontStyle.Bold));
+            ca.Corpo.Controls.Add(Rotulo("Junte todos os documentos do processo. Para adicionar mais, arraste para esta janela ou clique em “Adicionar mais arquivos…”.", 9.5f, FontStyle.Regular, Cores.Apagado));
+            int i = 1;
+            foreach (var f in fila.ToList()) ca.Corpo.Controls.Add(LinhaArquivo(f, i++));
+            if (fila.Count == 0) ca.Corpo.Controls.Add(Rotulo("Nenhum arquivo na lista.", 10f, FontStyle.Italic, Cores.Apagado));
+
+            var acoes = new Panel { Height = Escala.D(50), BackColor = Color.Transparent };
+            var bMais = new Botao("Adicionar mais arquivos…");
+            var bConf = new Botao("Conferir agora  →", true) { Font = new Font("Segoe UI", 11.5f, FontStyle.Bold), Enabled = fila.Count > 0 };
+            acoes.Controls.Add(bMais); acoes.Controls.Add(bConf);
+            acoes.Resize += (s, e) =>
+            {
+                bMais.Location = new Point(0, (acoes.Height - bMais.Height) / 2);
+                bConf.Location = new Point(acoes.Width - bConf.Width, (acoes.Height - bConf.Height) / 2);
+            };
+            bMais.Click += (s, e) => EscolherArquivos();
+            bConf.Click += async (s, e) => await Conferir();
+            ca.Corpo.Controls.Add(acoes);
+            raiz.Controls.Add(ca);
+            Pronto(Tela.Fila);
+        }
+
+        Control LinhaArquivo(string caminho, int n)
+        {
+            var p = new Panel { Height = Escala.D(42), BackColor = Cores.Suave, Margin = new Padding(0, Escala.D(2), 0, 0) };
+            string ext = Path.GetExtension(caminho).TrimStart('.').ToUpperInvariant();
+            string info;
+            try { long b = new FileInfo(caminho).Length; info = b >= 1 << 20 ? (b / 1048576.0).ToString("0.0") + " MB" : Math.Max(1, b / 1024) + " KB"; } catch { info = ""; }
+            if (lidas.TryGetValue(caminho, out var pgs)) info += "  ·  " + (pgs[0].EhImagem ? "imagem" : pgs.Count + (pgs.Count > 1 ? " páginas" : " página")) + " (já lido)";
+            var num = Rotulo(n + ".", 10f, FontStyle.Bold, Cores.Apagado); num.AutoSize = true;
+            var tag = Rotulo(ext, 8.5f, FontStyle.Bold, Color.White); tag.AutoSize = true; tag.BackColor = ext == "PDF" ? Cores.Ruim : Cores.Destaque2; tag.Padding = new Padding(Escala.D(4), Escala.D(1), Escala.D(4), Escala.D(1));
+            var nome = Rotulo(nomeDe[caminho], 10.5f, FontStyle.Regular); nome.AutoEllipsis = true;
+            var det = Rotulo(info, 9f, FontStyle.Regular, Cores.Apagado); det.AutoSize = true;
+            var rem = new Botao("Remover") { Font = new Font("Segoe UI", 9f) };
+            rem.Click += (s, e) => { if (!ocupado) Remover(caminho); };
+            p.Controls.AddRange(new Control[] { num, tag, nome, det, rem });
+            p.Resize += (s, e) =>
+            {
+                int x = Escala.D(10), cy = p.Height / 2;
+                num.Location = new Point(x, cy - num.Height / 2); x = num.Right + Escala.D(8);
+                tag.Location = new Point(x, cy - tag.Height / 2); x = tag.Right + Escala.D(10);
+                rem.Location = new Point(p.Width - rem.Width - Escala.D(8), cy - rem.Height / 2);
+                det.Location = new Point(rem.Left - det.Width - Escala.D(14), cy - det.Height / 2);
+                nome.SetBounds(x, cy - Escala.D(11), Math.Max(20, det.Left - x - Escala.D(10)), Escala.D(22));
+            };
+            return p;
         }
 
         class TelaProgresso
@@ -351,19 +556,19 @@ namespace ConferenciaMandado
         {
             Limpar();
             var c = new Cartao { Margin = new Padding(0, Escala.D(16), 0, 0) };
-            var tela = new TelaProgresso
+            var tp = new TelaProgresso
             {
-                Tit = Rotulo("Lendo o documento…", 14f, FontStyle.Bold),
+                Tit = Rotulo("Lendo os documentos…", 14f, FontStyle.Bold),
                 Det = Rotulo("", 10f, FontStyle.Regular, Cores.Apagado),
                 Barra = new ProgressBar { Maximum = 1000, Height = Escala.D(18), Style = ProgressBarStyle.Continuous }
             };
-            c.Corpo.Controls.Add(tela.Tit);
-            c.Corpo.Controls.Add(tela.Det);
-            c.Corpo.Controls.Add(tela.Barra);
+            c.Corpo.Controls.Add(tp.Tit);
+            c.Corpo.Controls.Add(tp.Det);
+            c.Corpo.Controls.Add(tp.Barra);
             c.Corpo.Controls.Add(Rotulo("Páginas escaneadas ou fotos passam pelo reconhecimento de texto (OCR) do Windows, que leva cerca de 1 segundo por página.", 9f, FontStyle.Regular, Cores.Apagado));
             raiz.Controls.Add(c);
-            Pronto();
-            return tela;
+            Pronto(Tela.Progresso);
+            return tp;
         }
 
         // ---------- resultado ----------
@@ -386,22 +591,21 @@ namespace ConferenciaMandado
 
         static string Abreviar(string s, int n) => s.Length <= n ? s : s.Substring(0, n - 1) + "…";
 
-        public static readonly string[] Ordem = { "mandado", "nome", "partilha", "transito" };
-
         void MostrarResultado()
         {
+            if (resultado == null) { MostrarFila(); return; }
             Limpar();
             var r = resultado;
 
             raiz.Controls.Add(Veredito(r));
 
-            // arquivos lidos
             var info = new List<string>();
             foreach (var a in arquivos)
             {
                 var pg = paginas.Where(p => p.Arquivo == a).ToList();
-                string tipo = pg.Any(p => p.LidaPorOcr) ? (pg.All(p => p.LidaPorOcr) ? "lido por OCR" : pg.Count(p => p.LidaPorOcr) + " pág. lida(s) por OCR") : pg.Any(p => p.Escaneada) ? "escaneado, sem OCR" : "texto digital";
-                info.Add(a + "  (" + (pg[0].EhImagem ? "imagem" : pg.Count + (pg.Count > 1 ? " págs." : " pág.")) + ", " + tipo + ")");
+                if (pg.Count == 0) continue;
+                string tp = pg.Any(p => p.LidaPorOcr) ? (pg.All(p => p.LidaPorOcr) ? "lido por OCR" : pg.Count(p => p.LidaPorOcr) + " pág. lida(s) por OCR") : pg.Any(p => p.Escaneada) ? "escaneado, sem OCR" : "texto digital";
+                info.Add(a + "  (" + (pg[0].EhImagem ? "imagem" : pg.Count + (pg.Count > 1 ? " págs." : " pág.")) + ", " + tp + ")");
             }
             raiz.Controls.Add(Rotulo("Documento(s): " + string.Join("   ·   ", info), 9.5f, FontStyle.Regular, Cores.Apagado));
             if (paginas.Any(p => p.LidaPorOcr))
@@ -409,13 +613,12 @@ namespace ConferenciaMandado
             foreach (var a in avisos) raiz.Controls.Add(Faixa(a, "warn"));
 
             for (int i = 0; i < r.Itens.Count; i++) raiz.Controls.Add(CartaoItem(r.Itens[i], i + 1));
-
             if (r.Justica.Status != "nao") raiz.Controls.Add(CartaoJustica(r.Justica));
-
             raiz.Controls.Add(CartaoDados(r));
+            raiz.Controls.Add(CartaoLegenda(r));
 
-            raiz.Controls.Add(Rotulo("Esta conferência é automática e serve de apoio. A qualificação do título e a decisão sobre a averbação cabem ao Oficial e aos escreventes.", 9f, FontStyle.Italic, Cores.Apagado, new Padding(0, Escala.D(6), 0, 0)));
-            Pronto();
+            raiz.Controls.Add(Rotulo("Esta conferência é automática e serve de apoio. A qualificação do título e a decisão sobre o registro/averbação cabem ao Oficial e aos escreventes.", 9f, FontStyle.Italic, Cores.Apagado, new Padding(0, Escala.D(6), 0, 0)));
+            Pronto(Tela.Resultado);
         }
 
         Control Faixa(string texto, string st)
@@ -426,27 +629,30 @@ namespace ConferenciaMandado
             return c;
         }
 
+        static string Marca(string st) => st == "ok" || st == "confirmed" ? "✔ " : st == "missing" ? "✘ " : st == "na" ? "– " : "! ";
+
         Cartao veredito;
         Control Veredito(Resultado r)
         {
             var falta = r.Itens.Where(i => i.StatusEfetivo == "missing").ToList();
             var conf = r.Itens.Where(i => i.StatusEfetivo == "warn").ToList();
+            int exigidos = r.Itens.Count(i => i.Status != "na");
+            string ato = r.Tipo == "interdicao" ? "registro" : "averbação";
             string st, tit, txt;
             if (falta.Count == 0 && conf.Count == 0)
-            { st = "ok"; tit = "Apto para averbação"; txt = "Os 4 itens essenciais foram encontrados no documento."; }
+            { st = "ok"; tit = "Apto para " + ato; txt = "Os " + exigidos + " itens exigidos foram encontrados no documento."; }
             else if (falta.Count > 0)
             {
                 st = "missing"; tit = "Pendências encontradas";
                 txt = "Faltando: " + string.Join(", ", falta.Select(i => i.Rotulo.ToLowerInvariant())) + "." + (conf.Count > 0 ? "  Conferir: " + string.Join(", ", conf.Select(i => i.Rotulo.ToLowerInvariant())) + "." : "");
             }
-            else { st = "warn"; tit = "Conferir antes de averbar"; txt = "Verifique no documento: " + string.Join(", ", conf.Select(i => i.Rotulo.ToLowerInvariant())) + "."; }
+            else { st = "warn"; tit = "Conferir antes de " + (ato == "registro" ? "registrar" : "averbar"); txt = "Verifique no documento: " + string.Join(", ", conf.Select(i => i.Rotulo.ToLowerInvariant())) + "."; }
 
             var c = new Cartao(new Selo(st, 52)) { BackColor = Cores.FundoDoStatus(st), Borda = Cores.DoStatus(st) };
+            c.Corpo.Controls.Add(Rotulo(Motor.Tipos.First(t => t.Chave == r.Tipo).Nome.ToUpperInvariant(), 9f, FontStyle.Bold, Cores.Apagado));
             c.Corpo.Controls.Add(Rotulo(tit, 16f, FontStyle.Bold, Cores.DoStatus(st)));
             c.Corpo.Controls.Add(Rotulo(txt, 10.5f));
-            // resumo ✔/✘ dos 4 itens numa linha
-            var linha = string.Join("     ", r.Itens.Select(i => (i.StatusEfetivo == "ok" || i.StatusEfetivo == "confirmed" ? "✔ " : i.StatusEfetivo == "missing" ? "✘ " : "! ") + i.Rotulo));
-            c.Corpo.Controls.Add(Rotulo(linha, 10f, FontStyle.Bold, Cores.Apagado));
+            c.Corpo.Controls.Add(Rotulo(string.Join("     ", r.Itens.Select(i => Marca(i.StatusEfetivo) + i.Rotulo)), 10f, FontStyle.Bold, Cores.Apagado));
             veredito = c;
             return c;
         }
@@ -464,11 +670,13 @@ namespace ConferenciaMandado
         }
 
         static readonly Dictionary<string, string> RotuloStatus = new Dictionary<string, string>
-            { { "ok", "✔ Encontrado" }, { "warn", "! Conferir" }, { "missing", "✘ Não encontrado" }, { "confirmed", "✔ Conferido manualmente" } };
+            { { "ok", "✔ Encontrado" }, { "warn", "! Conferir" }, { "missing", "✘ Não encontrado" }, { "confirmed", "✔ Conferido manualmente" }, { "na", "– Não se aplica" } };
 
-        static Color CorMarca(string chave) =>
-            chave == "mandado" ? Cores.Hex("#ffdc40") : chave == "nome" ? Cores.Hex("#b5e6b5") : chave == "partilha" ? Cores.Hex("#bcd3ff") :
-            chave == "transito" ? Cores.Hex("#ffc58f") : Cores.Hex("#9fe3d8");
+        static Color CorMarca(string chave)
+        {
+            if (!Grifo.Categorias.TryGetValue(chave, out var c)) return Cores.Marca;
+            return Color.FromArgb((int)(c.R * 255), (int)(c.G * 255), (int)(c.B * 255));
+        }
 
         Control CartaoItem(Item it, int n)
         {
@@ -478,10 +686,9 @@ namespace ConferenciaMandado
             var pl = ListaPaginas(it.Paginas);
 
             var topo = new Panel { Height = Escala.D(30), BackColor = Color.Transparent };
-            var tit = Rotulo(n + ". " + it.Rotulo, 13f, FontStyle.Bold);
-            tit.AutoSize = true;
+            var tit = Rotulo(n + ". " + it.Rotulo, 13f, FontStyle.Bold); tit.AutoSize = true;
             var pgl = Rotulo(pl, 9.5f, FontStyle.Regular, Cores.Apagado); pgl.AutoSize = true;
-            var stl = Rotulo(RotuloStatus[st], 10f, FontStyle.Bold, Cores.DoStatus(st)); stl.AutoSize = true;
+            var stl = Rotulo(RotuloStatus.TryGetValue(st, out var rs) ? rs : st, 10f, FontStyle.Bold, Cores.DoStatus(st)); stl.AutoSize = true;
             topo.Controls.AddRange(new Control[] { tit, pgl, stl });
             topo.Resize += (s, e) =>
             {
@@ -502,7 +709,7 @@ namespace ConferenciaMandado
                 c.Corpo.Controls.Add(cx);
             }
 
-            if (it.Status != "ok")
+            if (it.Status == "warn" || it.Status == "missing")
             {
                 var cb = new CheckBox { Text = "Conferi no documento e está correto", Checked = it.ConferidoManual, AutoSize = true, Font = new Font("Segoe UI", 10f), ForeColor = Cores.Tinta, BackColor = Color.Transparent, Margin = new Padding(0, Escala.D(4), 0, 0) };
                 cb.CheckedChanged += (s, e) =>
@@ -527,7 +734,7 @@ namespace ConferenciaMandado
             string tit = j.Status == "sim" ? "Justiça gratuita deferida" : j.Status == "pedida" ? "Justiça gratuita pedida" : "Justiça gratuita indeferida";
             var pl = ListaPaginas(j.Paginas);
             c.Corpo.Controls.Add(Rotulo(tit + (pl != "" ? "   (" + pl + ")" : ""), 12f, FontStyle.Bold, st == "ok" ? Cores.Hex("#1e7268") : Cores.Aviso));
-            c.Corpo.Controls.Add(Rotulo(j.Resumo + "  (Não é item obrigatório; só para informação.)", 10f, FontStyle.Regular, Cores.Apagado));
+            c.Corpo.Controls.Add(Rotulo(j.Resumo + "  (Não é item obrigatório no divórcio; só para informação.)", 10f, FontStyle.Regular, Cores.Apagado));
             foreach (var t in j.Trechos.Take(1))
             {
                 var cx = new CaixaTrecho { Font = new Font("Segoe UI", 10f) };
@@ -542,17 +749,31 @@ namespace ConferenciaMandado
             var c = new Cartao();
             c.Corpo.Controls.Add(Rotulo("Outras informações encontradas", 12f, FontStyle.Bold));
             var linhas = new List<KeyValuePair<string, string>>();
-            if (r.Partes.Count > 0) linhas.Add(new KeyValuePair<string, string>("Partes", string.Join("  e  ", r.Partes)));
-            if (r.NomesSolteiro.Count > 0) linhas.Add(new KeyValuePair<string, string>("Nome a usar após o divórcio", string.Join("  ·  ", r.NomesSolteiro)));
+            if (r.Tipo == "divorcio")
+            {
+                if (r.Partes.Count > 0) linhas.Add(new KeyValuePair<string, string>("Partes", string.Join("  e  ", r.Partes)));
+                if (r.NomesSolteiro.Count > 0) linhas.Add(new KeyValuePair<string, string>("Nome a usar após o divórcio", string.Join("  ·  ", r.NomesSolteiro)));
+            }
             foreach (var e in r.Extras) linhas.Add(new KeyValuePair<string, string>(e.Rotulo, e.Achou ? e.Valor : null));
             if (!string.IsNullOrEmpty(r.Cartorio)) linhas.Add(new KeyValuePair<string, string>("Cartório do casamento (cidade)", r.Cartorio));
             foreach (var kv in linhas)
             {
-                var l = Rotulo(kv.Key, 9f, FontStyle.Bold, Cores.Apagado, new Padding(0, Escala.D(4), 0, 0));
-                var v = Rotulo(kv.Value ?? "não encontrado", 10.5f, kv.Value == null ? FontStyle.Italic : FontStyle.Regular, kv.Value == null ? Cores.Apagado : Cores.Tinta);
-                c.Corpo.Controls.Add(l); c.Corpo.Controls.Add(v);
+                c.Corpo.Controls.Add(Rotulo(kv.Key, 9f, FontStyle.Bold, Cores.Apagado, new Padding(0, Escala.D(4), 0, 0)));
+                c.Corpo.Controls.Add(Rotulo(kv.Value ?? "não encontrado", 10.5f, kv.Value == null ? FontStyle.Italic : FontStyle.Regular, kv.Value == null ? Cores.Apagado : Cores.Tinta));
             }
             c.Corpo.Controls.Add(Rotulo("Use “Ver texto lido” para conferir todo o texto que o programa leu do documento.", 9f, FontStyle.Regular, Cores.Apagado, new Padding(0, Escala.D(6), 0, 0)));
+            return c;
+        }
+
+        Control CartaoLegenda(Resultado r)
+        {
+            var chaves = r.Itens.Select(i => i.Chave).ToList();
+            if (r.Justica.Status != "nao") chaves.Add("justica");
+            if (r.Tipo == "divorcio") chaves.Add("dados");
+            var c = new Cartao();
+            c.Corpo.Controls.Add(Rotulo("Cores no PDF grifado", 11f, FontStyle.Bold));
+            c.Corpo.Controls.Add(new Legenda(chaves.Distinct().Where(Grifo.Categorias.ContainsKey).Select(k => new KeyValuePair<Color, string>(CorMarca(k), Grifo.Categorias[k].Nome))));
+            c.Corpo.Controls.Add(Rotulo("Clique em “Baixar PDF grifado” para salvar uma cópia do(s) PDF(s) com estes trechos marcados. O arquivo original não é alterado.", 9f, FontStyle.Regular, Cores.Apagado));
             return c;
         }
     }
@@ -564,19 +785,17 @@ namespace ConferenciaMandado
         protected override void OnPaint(PaintEventArgs e)
         {
             var g = e.Graphics;
-            g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
             int x = Escala.D(24);
             using (var f1 = new Font("Segoe UI", 8.5f, FontStyle.Bold))
                 TextRenderer.DrawText(g, "REGISTRO CIVIL DAS PESSOAS NATURAIS  ·  BETIM/MG", f1, new Point(x, Escala.D(16)), Cores.Apagado);
             using (var f2 = new Font("Segoe UI Semibold", 19f))
-                TextRenderer.DrawText(g, "Conferência de Mandado de Divórcio", f2, new Point(x - Escala.D(2), Escala.D(34)), Cores.Tinta);
-            // selo "sem internet"
+                TextRenderer.DrawText(g, "Conferência de Mandados e Sentenças", f2, new Point(x - Escala.D(2), Escala.D(34)), Cores.Tinta);
             string s = "✔  Funciona sem internet";
             using (var f3 = new Font("Segoe UI", 9.5f))
             {
                 var tam = TextRenderer.MeasureText(s, f3);
                 var r = new Rectangle(Width - x - tam.Width - Escala.D(24), Escala.D(38), tam.Width + Escala.D(24), tam.Height + Escala.D(10));
-                if (r.Left > Escala.D(520))
+                if (r.Left > Escala.D(560))
                 {
                     g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
                     using (var b = new SolidBrush(Cores.OkFundo)) using (var path = Arredondado(r, r.Height / 2)) { g.FillPath(b, path); using (var p = new Pen(Cores.Hex("#c5e2cf"))) g.DrawPath(p, path); }

@@ -1,32 +1,47 @@
-CONFERÊNCIA DE MANDADO DE DIVÓRCIO — RCPN Betim/MG
-====================================================
+CONFERÊNCIA DE MANDADOS E SENTENÇAS — RCPN Betim/MG
+=====================================================
 
 COMO USAR
-1. Copie o arquivo "Conferencia-Mandado-Divorcio.exe" para o computador
-   (por exemplo, para a Área de Trabalho). Não precisa instalar nada.
+1. Copie "Conferencia-de-Mandados.exe" para o computador (por exemplo,
+   para a Área de Trabalho). Não precisa instalar nada.
 2. Abra com dois cliques.
-3. Arraste o PDF do mandado para a janela, ou clique em "Abrir PDF…".
-   - Pode abrir vários arquivos de uma vez (segure Ctrl), por exemplo a
-     sentença e a certidão de trânsito em julgado.
-   - Também dá para arrastar o PDF em cima do ícone do programa.
-4. O programa mostra os 4 itens com ✔ (encontrado), ! (conferir) ou
-   ✘ (não encontrado), e o trecho do documento onde achou cada um.
+3. Adicione os arquivos do processo: arraste para a janela ou clique em
+   "Adicionar arquivos…". Pode juntar quantos quiser (sentença, mandado,
+   termo de compromisso, certidão de trânsito em julgado…) e remover algum
+   da lista antes de conferir.
+4. Escolha o tipo: Divórcio ou Interdição (curatela).
+5. Clique em "Conferir agora".
+6. Cada item aparece com ✔ (encontrado), ! (conferir), ✘ (não encontrado)
+   ou – (não se aplica), com o trecho e a página onde foi encontrado.
+7. "Baixar PDF grifado" salva uma cópia do(s) PDF(s) com os trechos
+   marcados em cores (a legenda aparece no fim do resultado). O arquivo
+   original não é alterado.
+
+ITENS CONFERIDOS
+Divórcio: força de mandado · nome que a parte voltará a assinar ·
+  divisão de bens · trânsito em julgado (e justiça gratuita, só informativo)
+Interdição: sentença · decreta a interdição · força de mandado ou mandado
+  do juiz · termo de compromisso (exigido quando a sentença tem força de
+  mandado) · qualificação do curador · qualificação do interditado (nome,
+  estado civil, profissão, nacionalidade e endereço em Betim) · trânsito em
+  julgado · justiça gratuita · assinatura eletrônica (se o documento for
+  digital)
 
 PRIMEIRA VEZ QUE ABRIR
-O Windows pode mostrar "O Windows protegeu o computador" (porque o
-programa não tem assinatura digital). Clique em "Mais informações" e
-depois em "Executar assim mesmo". Isso só aparece na primeira vez.
+O Windows pode mostrar "O Windows protegeu o computador" (o programa não
+tem assinatura digital). Clique em "Mais informações" e depois em
+"Executar assim mesmo".
 
 PDF ESCANEADO (papel)
-As páginas sem texto passam pelo reconhecimento de texto (OCR) que já
-vem no Windows 10/11. Se aparecer um aviso dizendo que o OCR em português
-não está instalado:
+As páginas sem texto passam pelo reconhecimento de texto (OCR) que já vem
+no Windows 10/11. Se aparecer um aviso dizendo que o OCR em português não
+está instalado:
   Configurações > Hora e idioma > Idioma e região > Português (Brasil)
   > Opções de idioma > Reconhecimento óptico de caracteres > Baixar.
 
 PRIVACIDADE
 Tudo roda neste computador, sem internet. O programa não envia e não
-guarda o conteúdo dos mandados.
+guarda o conteúdo dos documentos.
 
 REQUISITOS
 Windows 10 ou 11 (usa o .NET Framework 4.8, que já vem no Windows).
