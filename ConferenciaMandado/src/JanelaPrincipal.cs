@@ -735,16 +735,33 @@ namespace ConferenciaMandado
 
             if (it.Trechos.Count > 0)
                 c.Corpo.Controls.Add(Rotulo("Onde encontrei:", 9f, FontStyle.Bold, Cores.Apagado, new Padding(0, Escala.D(4), 0, 0)));
+            CheckBox cb = null;
             foreach (var t in it.Trechos.Take(2))
             {
                 var cx = new CaixaTrecho { Font = new Font("Segoe UI", 10f) };
                 cx.Mostrar(NomePagina(t.Pagina), t.Antes, t.Achado, t.Depois, CorMarca(it.Chave));
+                int pg = t.Pagina;
+                cx.DoubleClick += (s, e) => AbrirDocumento(it, pg, () => { if (cb != null) cb.Checked = true; });
+                dica.SetToolTip(cx, "Clique duas vezes para abrir esta página do documento");
                 c.Corpo.Controls.Add(cx);
+            }
+
+            // botão para ir direto à página no documento
+            if (paginas.Count > 0)
+            {
+                bool conferir = it.Status == "warn" || it.Status == "missing";
+                int pg = it.Trechos.Count > 0 ? it.Trechos[0].Pagina : it.Paginas.Count > 0 ? it.Paginas[0] : -1;
+                string txt = pg >= 0 ? "Ver no documento (" + NomePagina(pg) + ")" : "Abrir os documentos para conferir";
+                var bv = new Botao(txt, conferir) { Font = new Font("Segoe UI", 9.5f, conferir ? FontStyle.Bold : FontStyle.Regular) };
+                var linhaB = new Panel { Height = bv.PreferredSize.Height + Escala.D(6), BackColor = Color.Transparent, Margin = new Padding(0, Escala.D(4), 0, 0) };
+                linhaB.Controls.Add(bv); bv.Location = new Point(0, Escala.D(3));
+                bv.Click += (s, e) => AbrirDocumento(it, Math.Max(0, pg), () => { if (cb != null) cb.Checked = true; });
+                c.Corpo.Controls.Add(linhaB);
             }
 
             if (it.Status == "warn" || it.Status == "missing")
             {
-                var cb = new CheckBox { Text = "Conferi no documento e está correto", Checked = it.ConferidoManual, AutoSize = true, Font = new Font("Segoe UI", 10f), ForeColor = Cores.Tinta, BackColor = Color.Transparent, Margin = new Padding(0, Escala.D(4), 0, 0) };
+                cb = new CheckBox { Text = "Conferi no documento e está correto", Checked = it.ConferidoManual, AutoSize = true, Font = new Font("Segoe UI", 10f), ForeColor = Cores.Tinta, BackColor = Color.Transparent, Margin = new Padding(0, Escala.D(4), 0, 0) };
                 cb.CheckedChanged += (s, e) =>
                 {
                     it.ConferidoManual = cb.Checked;
@@ -758,6 +775,14 @@ namespace ConferenciaMandado
                 c.Corpo.Controls.Add(cb);
             }
             return c;
+        }
+
+        readonly ToolTip dica = new ToolTip();
+
+        void AbrirDocumento(Item it, int pagina, Action marcar)
+        {
+            if (paginas.Count == 0) return;
+            using (var j = new JanelaDocumento(paginas, arquivos, resultado, pagina, it, marcar)) j.ShowDialog(this);
         }
 
         Control CartaoJustica(Item j)

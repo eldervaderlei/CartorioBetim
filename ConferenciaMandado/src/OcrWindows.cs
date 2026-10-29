@@ -184,3 +184,43 @@ namespace ConferenciaMandado
         }
     }
 }
+
+namespace ConferenciaMandado
+{
+    // Desenha uma página do PDF como imagem, com o leitor de PDF do próprio Windows (Windows.Data.Pdf)
+    public static class PaginaWindows
+    {
+        static readonly System.Collections.Generic.Dictionary<string, Windows.Data.Pdf.PdfDocument> abertos = new System.Collections.Generic.Dictionary<string, Windows.Data.Pdf.PdfDocument>();
+
+        public static async System.Threading.Tasks.Task<byte[]> RenderizarPng(string caminho, int numero, int largura)
+        {
+            Windows.Data.Pdf.PdfDocument doc;
+            lock (abertos) abertos.TryGetValue(caminho, out doc);
+            if (doc == null)
+            {
+                var mem = new Windows.Storage.Streams.InMemoryRandomAccessStream();
+                using (var w = new Windows.Storage.Streams.DataWriter(mem.GetOutputStreamAt(0)))
+                {
+                    w.WriteBytes(System.IO.File.ReadAllBytes(caminho));
+                    await w.StoreAsync(); await w.FlushAsync(); w.DetachStream();
+                }
+                mem.Seek(0);
+                doc = await Windows.Data.Pdf.PdfDocument.LoadFromStreamAsync(mem);
+                lock (abertos) abertos[caminho] = doc;
+            }
+            using (var pg = doc.GetPage((uint)(numero - 1)))
+            using (var img = new Windows.Storage.Streams.InMemoryRandomAccessStream())
+            {
+                await pg.RenderToStreamAsync(img, new Windows.Data.Pdf.PdfPageRenderOptions { DestinationWidth = (uint)largura });
+                img.Seek(0);
+                var bytes = new byte[img.Size];
+                using (var r = new Windows.Storage.Streams.DataReader(img.GetInputStreamAt(0)))
+                {
+                    await r.LoadAsync((uint)img.Size);
+                    r.ReadBytes(bytes);
+                }
+                return bytes;
+            }
+        }
+    }
+}

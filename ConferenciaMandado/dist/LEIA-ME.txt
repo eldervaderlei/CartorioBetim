@@ -13,6 +13,9 @@ COMO USAR
 5. Clique em "Conferir agora".
 6. Cada item aparece com ✔ (encontrado), ! (conferir), ✘ (não encontrado)
    ou – (não se aplica), com o trecho e a página onde foi encontrado.
+   O botão "Ver no documento" abre a página do documento com os trechos
+   grifados (dois cliques num trecho fazem o mesmo). Lá dá para mudar de
+   página e de arquivo, dar zoom e clicar em "Conferi e está correto".
 7. "Baixar PDF grifado" salva uma cópia com os trechos marcados. Com
    vários arquivos, dá para juntar tudo num PDF só (na ordem da lista) ou
    salvar um PDF grifado para cada arquivo. Os trechos ficam
