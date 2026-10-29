@@ -1,0 +1,32 @@
+CONFERÊNCIA DE MANDADO DE DIVÓRCIO — RCPN Betim/MG
+====================================================
+
+COMO USAR
+1. Copie o arquivo "Conferencia-Mandado-Divorcio.exe" para o computador
+   (por exemplo, para a Área de Trabalho). Não precisa instalar nada.
+2. Abra com dois cliques.
+3. Arraste o PDF do mandado para a janela, ou clique em "Abrir PDF…".
+   - Pode abrir vários arquivos de uma vez (segure Ctrl), por exemplo a
+     sentença e a certidão de trânsito em julgado.
+   - Também dá para arrastar o PDF em cima do ícone do programa.
+4. O programa mostra os 4 itens com ✔ (encontrado), ! (conferir) ou
+   ✘ (não encontrado), e o trecho do documento onde achou cada um.
+
+PRIMEIRA VEZ QUE ABRIR
+O Windows pode mostrar "O Windows protegeu o computador" (porque o
+programa não tem assinatura digital). Clique em "Mais informações" e
+depois em "Executar assim mesmo". Isso só aparece na primeira vez.
+
+PDF ESCANEADO (papel)
+As páginas sem texto passam pelo reconhecimento de texto (OCR) que já
+vem no Windows 10/11. Se aparecer um aviso dizendo que o OCR em português
+não está instalado:
+  Configurações > Hora e idioma > Idioma e região > Português (Brasil)
+  > Opções de idioma > Reconhecimento óptico de caracteres > Baixar.
+
+PRIVACIDADE
+Tudo roda neste computador, sem internet. O programa não envia e não
+guarda o conteúdo dos mandados.
+
+REQUISITOS
+Windows 10 ou 11 (usa o .NET Framework 4.8, que já vem no Windows).

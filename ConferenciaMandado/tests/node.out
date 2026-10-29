@@ -1,0 +1,42 @@
+=== 1-completo.txt
+mandado|ok|O documento tem força de mandado.|pgs=0
+   [0] …seja, MARIA APARECIDA SOUZA. Não há bens a partilhar. Defiro os benefícios da justiça gratuita. Esta sentença <<servirá como mandado de averbação>> ao Cartório de Registro Civil. Publique-se. Registre-se. Intimem-se. Betim, 12 de março de 2025. Juiz de Direito…
+nome|ok|Encontrado: retorno ao nome de solteiro(a). (No acordo/peça citada pela sentença.)|pgs=0
+   [0] …B-45, folha 120, termo 15.432. Ante o exposto, HOMOLOGO o acordo e DECRETO o divórcio do casal. A divorcianda <<voltará a usar>> o nome de solteira, qual seja, MARIA APARECIDA SOUZA. Não há bens a partilhar. Defiro os benefícios da justiça…
+partilha|ok|Declarado que não há bens a partilhar.|pgs=0
+   [0] …DECRETO o divórcio do casal. A divorcianda voltará a usar o nome de solteira, qual seja, MARIA APARECIDA SOUZA. <<Não há bens>> a partilhar. Defiro os benefícios da justiça gratuita. Esta sentença servirá como mandado de averbação ao Cartório…
+transito|ok|Trânsito em julgado certificado. Data encontrada: 20/03/2025.|pgs=0
+   [0] …Assinado eletronicamente por: FULANO DE TAL - 12/03/2025 Num. 123456789 - Pág. 1 CERTIDÃO Certifico que a sentença <<transitou em julgado>> em 20/03/2025. Betim, 21/03/2025. 
+justica|sim|O processo tem justiça gratuita deferida. Veja os trechos abaixo.|pgs=0
+   [0] …casal. A divorcianda voltará a usar o nome de solteira, qual seja, MARIA APARECIDA SOUZA. Não há bens a partilhar. <<Defiro os benefícios da justiça gratuita>>. Esta sentença servirá como mandado de averbação ao Cartório de Registro Civil. Publique-se. Registre-se. Intimem-se.…
+extra|Número do processo|True|5001234-56.2025.8.13.0027
+extra|Vara / juízo|True|Comarca de Betim - 2ª Vara de Família
+extra|Dados do registro de casamento|True|Livro B-45 · folha 120 · termo 15.432
+extra|Assinatura eletrônica / código de autenticidade|True|Assinado eletronicamente
+dados|JOÃO CARLOS DA SILVA / MARIA APARECIDA SOUZA DA SILVA|MARIA APARECIDA SOUZA|5001234-56.2025.8.13.0027|B-45|120|15.432|Betim|ela|sem
+=== 2-sem-transito.txt
+mandado|warn|A decisão só determina que o mandado seja expedido. Confira se o mandado em si (ou a cláusula “servirá como mandado”) está no documento.|pgs=0
+   [0] …usar o nome de casada. Os bens serão partilhados posteriormente, em ação própria. Após o trânsito em julgado, <<expeça-se mandado>> de averbação. Betim, 5 de junho de 2025. 
+nome|ok|Encontrado: manutenção do nome de casado(a).|pgs=0
+   [0] …FERREIRA em face de CARLOS EDUARDO FERREIRA. JULGO PROCEDENTE o pedido para decretar o divórcio. A requerente <<continuará a usar o nome de casada>>. Os bens serão partilhados posteriormente, em ação própria. Após o trânsito em julgado, expeça-se mandado de averbação.…
+partilha|ok|A partilha de bens será feita posteriormente (o processo segue quanto aos bens).|pgs=0
+   [0] …FERREIRA. JULGO PROCEDENTE o pedido para decretar o divórcio. A requerente continuará a usar o nome de casada. Os <<bens serão partilhados posteriormente>>, em ação própria. Após o trânsito em julgado, expeça-se mandado de averbação. Betim, 5 de junho de 2025. 
+transito|warn|O trânsito em julgado só aparece como condição futura (ex.: “após o trânsito em julgado…”). Confira se há certidão de trânsito em julgado com data.|pgs=0
+   [0] …requerente continuará a usar o nome de casada. Os bens serão partilhados posteriormente, em ação própria. Após o <<trânsito em julgado>>, expeça-se mandado de averbação. Betim, 5 de junho de 2025. 
+justica|nao|Não há menção à justiça gratuita no documento.|pgs=
+extra|Número do processo|True|5009876-11.2024.8.13.0027
+extra|Vara / juízo|True|Comarca de Betim - 1ª Vara de Família
+extra|Dados do registro de casamento|False|
+extra|Assinatura eletrônica / código de autenticidade|False|
+dados|CARLOS EDUARDO FERREIRA / ANA PAULA FERREIRA||5009876-11.2024.8.13.0027|||||mantem_ela|posterior
+=== 3-nada.txt
+mandado|missing|Não encontrei cláusula de força de mandado (ex.: “servirá como mandado”) nem título de mandado de averbação.|pgs=
+nome|missing|Não encontrei informação sobre o nome que a parte passará a usar.|pgs=
+partilha|missing|Não encontrei menção à divisão de bens (partilha, “não há bens a partilhar” ou “partilha posterior”).|pgs=
+transito|missing|Não encontrei menção ao trânsito em julgado.|pgs=
+justica|nao|Não há menção à justiça gratuita no documento.|pgs=
+extra|Número do processo|False|
+extra|Vara / juízo|True|íssimo Senhor Doutor Juiz de Direito da Vara de Família da Comarca de Betim/MG
+extra|Dados do registro de casamento|False|
+extra|Assinatura eletrônica / código de autenticidade|False|
+dados|MG PEDRO HENRIQUE ALVES / JULIANA ALVES||||||Família da Comarca de Betim||

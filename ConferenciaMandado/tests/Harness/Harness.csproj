@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net8.0</TargetFramework><Nullable>disable</Nullable><LangVersion>latest</LangVersion></PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Jint" Version="4.4.1" />
+    <PackageReference Include="PdfPig" Version="0.1.11" />
+    <Compile Include="../../src/Motor.cs" /><Compile Include="../../src/Leitura.cs" />
+    <EmbeddedResource Include="../../src/Engine/motor.js" LogicalName="motor.js" />
+  </ItemGroup>
+</Project>
