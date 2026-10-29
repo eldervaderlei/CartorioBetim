@@ -13,7 +13,9 @@ COMO USAR
 5. Clique em "Conferir agora".
 6. Cada item aparece com ✔ (encontrado), ! (conferir), ✘ (não encontrado)
    ou – (não se aplica), com o trecho e a página onde foi encontrado.
-7. "Baixar PDF grifado" salva uma cópia do(s) PDF(s) com os trechos
+7. "Baixar PDF grifado" salva uma cópia com os trechos marcados. Com
+   vários arquivos, dá para juntar tudo num PDF só (na ordem da lista) ou
+   salvar um PDF grifado para cada arquivo. Os trechos ficam
    marcados em cores (a legenda aparece no fim do resultado). O arquivo
    original não é alterado.
 

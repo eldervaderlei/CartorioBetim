@@ -306,6 +306,23 @@ namespace ConferenciaMandado
             return long.Parse(ms[ms.Count - 1].Groups[1].Value);
         }
 
+        // Junta vários PDFs num só (na ordem dada) e grifa cada parte nas páginas certas
+        public static byte[] JuntarEGrifar(IList<KeyValuePair<byte[], Dictionary<int, List<Destaque>>>> partes)
+        {
+            var arquivos = partes.Select(p => p.Key).ToList();
+            var todos = new Dictionary<int, List<Destaque>>();
+            int desloc = 0;
+            foreach (var p in partes)
+            {
+                int n;
+                using (var d = PdfDocument.Open(p.Key)) n = d.NumberOfPages;
+                foreach (var kv in p.Value) todos[kv.Key + desloc] = kv.Value;
+                desloc += n;
+            }
+            var junto = PdfMerger.Merge(arquivos, null, PdfAStandard.None, null);
+            return Grifar(junto, todos);
+        }
+
         // Foto/escaneamento em imagem: vira um PDF de uma página para poder ser grifado
         public static byte[] ImagemParaPdf(byte[] imagem, bool png, int larguraPx, int alturaPx)
         {

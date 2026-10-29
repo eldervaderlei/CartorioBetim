@@ -175,6 +175,22 @@ namespace ConferenciaMandado
 
         protected override void OnHandleCreated(EventArgs e) { base.OnHandleCreated(e); BeginInvoke(new Action(Medir)); }
 
+        // a rodinha do mouse sobre o trecho rola a página, não a caixa
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
+        const int WM_MOUSEWHEEL = 0x020A;
+
+        protected override void WndProc(ref Message m)
+        {
+            if (m.Msg == WM_MOUSEWHEEL)
+            {
+                Control alvo = Parent;
+                while (alvo != null && !(alvo is ScrollableControl sc && sc.AutoScroll)) alvo = alvo.Parent;
+                if (alvo != null && alvo.IsHandleCreated) { SendMessage(alvo.Handle, WM_MOUSEWHEEL, m.WParam, m.LParam); return; }
+            }
+            base.WndProc(ref m);
+        }
+
         public void Mostrar(string rotulo, string antes, string achado, string depois, Color marca)
         {
             Clear();

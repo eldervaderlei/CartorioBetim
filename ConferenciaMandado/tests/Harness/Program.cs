@@ -28,6 +28,16 @@ if (args.Length > 0 && args[0] == "--caso") {
   foreach (var e in r.Extras) Console.WriteLine($"extra|{e.Rotulo}|{e.Valor}");
   return;
 }
+// Harness --juntar saida.pdf a.pdf b.pdf ...: confere tudo junto e gera um PDF único grifado
+if (args.Length > 0 && args[0] == "--juntar") {
+  var arqs = args.Skip(2).ToList(); var pags = new List<Pagina>();
+  foreach (var f in arqs) pags.AddRange(Leitura.LerPdf(f, Path.GetFileName(f)));
+  var r = Motor.Analisar(TIPO, Leitura.Juntar(pags));
+  var partes = arqs.Select(f => new KeyValuePair<byte[], Dictionary<int, List<Grifo.Destaque>>>(File.ReadAllBytes(f), Grifo.Destaques(r, pags, Path.GetFileName(f)))).ToList();
+  Console.WriteLine("destaques por arquivo: " + string.Join(", ", partes.Select(p => p.Value.Sum(x => x.Value.Count))));
+  File.WriteAllBytes(args[1], Grifo.JuntarEGrifar(partes));
+  return;
+}
 if (args.Length > 0 && args[0] == "--grifar") {
   var pags = new List<Pagina>(); var nomes = args.Skip(2).Select(Path.GetFileName).ToList();
   foreach (var f in args.Skip(2)) pags.AddRange(Leitura.LerPdf(f, Path.GetFileName(f)));

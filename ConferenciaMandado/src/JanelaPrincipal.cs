@@ -322,21 +322,33 @@ namespace ConferenciaMandado
             var alvos = arquivos.Where(caminhoDe.ContainsKey).ToList();
             if (alvos.Count == 0) return;
 
+            bool juntar = false;
+            if (alvos.Count > 1)
+            {
+                var resp = MessageBox.Show(this, "São " + alvos.Count + " arquivos. Juntar tudo num PDF só, na ordem da lista?\n\nSim: um único PDF com todos os documentos, grifado.\nNão: um PDF grifado para cada arquivo.",
+                    Text, MessageBoxButtons.YesNoCancel, MessageBoxIcon.Question);
+                if (resp == DialogResult.Cancel) return;
+                juntar = resp == DialogResult.Yes;
+            }
+
             var destinos = new Dictionary<string, string>();
-            if (alvos.Count == 1)
+            string destinoJunto = null;
+            if (alvos.Count == 1 || juntar)
             {
                 string orig = caminhoDe[alvos[0]];
+                string proc = resultado.Extras.FirstOrDefault(e => e.Rotulo == "Número do processo" && e.Achou)?.Valor?.Split(',')[0].Trim();
+                string sugestao = alvos.Count == 1 ? Path.GetFileNameWithoutExtension(alvos[0]) : (string.IsNullOrEmpty(proc) ? "Processo" : proc) + " - completo";
                 using (var d = new SaveFileDialog
                 {
-                    Title = "Salvar PDF grifado",
+                    Title = juntar ? "Salvar PDF único grifado" : "Salvar PDF grifado",
                     Filter = "PDF (*.pdf)|*.pdf",
-                    FileName = Path.GetFileNameWithoutExtension(alvos[0]) + " - grifado.pdf",
+                    FileName = sugestao + " - grifado.pdf",
                     InitialDirectory = Path.GetDirectoryName(orig),
                     OverwritePrompt = true
                 })
                 {
                     if (d.ShowDialog(this) != DialogResult.OK) return;
-                    destinos[alvos[0]] = d.FileName;
+                    if (juntar) destinoJunto = d.FileName; else destinos[alvos[0]] = d.FileName;
                 }
             }
             else
@@ -355,10 +367,30 @@ namespace ConferenciaMandado
 
             ocupado = true; AtualizarBotoes(); Cursor = Cursors.WaitCursor;
             var erros = new List<string>(); var semGrifo = new List<string>();
+            var salvos = new List<string>();
             try
             {
                 var r = resultado; var pgs = paginas.ToList();
-                foreach (var a in alvos)
+                if (juntar)
+                {
+                    try
+                    {
+                        var partes = new List<KeyValuePair<byte[], Dictionary<int, List<Grifo.Destaque>>>>();
+                        foreach (var a in alvos) { var dq = Grifo.Destaques(r, pgs, a); if (dq.Count == 0) semGrifo.Add(a); partes.Add(new KeyValuePair<byte[], Dictionary<int, List<Grifo.Destaque>>>(null, dq)); }
+                        await Task.Run(() =>
+                        {
+                            for (int i = 0; i < alvos.Count; i++)
+                            {
+                                string orig = caminhoDe[alvos[i]];
+                                partes[i] = new KeyValuePair<byte[], Dictionary<int, List<Grifo.Destaque>>>(Leitura.EhPdf(orig) ? File.ReadAllBytes(orig) : ImagemComoPdf(orig), partes[i].Value);
+                            }
+                            File.WriteAllBytes(destinoJunto, Grifo.JuntarEGrifar(partes));
+                        });
+                        salvos.Add(destinoJunto);
+                    }
+                    catch (Exception ex) { erros.Add("Não consegui juntar os arquivos: " + Explicar(ex) + "\nTente salvar um PDF para cada arquivo (responda “Não” na pergunta)."); }
+                }
+                else foreach (var a in alvos)
                 {
                     string orig = caminhoDe[a], dest = destinos[a];
                     try
@@ -370,22 +402,23 @@ namespace ConferenciaMandado
                             byte[] pdf = Leitura.EhPdf(orig) ? File.ReadAllBytes(orig) : ImagemComoPdf(orig);
                             File.WriteAllBytes(dest, Grifo.Grifar(pdf, dq));
                         });
+                        salvos.Add(dest);
                     }
-                    catch (Exception ex) { erros.Add(a + ": " + Explicar(ex)); destinos.Remove(a); }
+                    catch (Exception ex) { erros.Add(a + ": " + Explicar(ex)); }
                 }
             }
             finally { ocupado = false; AtualizarBotoes(); Cursor = Cursors.Default; }
 
-            string msg = destinos.Count == 0 ? "" : destinos.Count == 1 ? "PDF grifado salvo em:\n" + destinos.Values.First() : destinos.Count + " PDFs grifados salvos em:\n" + Path.GetDirectoryName(destinos.Values.First());
-            if (semGrifo.Count > 0) msg += "\n\nNenhum trecho foi encontrado em: " + string.Join(", ", semGrifo) + " (salvo sem grifos).";
-            if (erros.Count > 0) msg += "\n\nNão foi possível gerar:\n" + string.Join("\n", erros);
-            if (destinos.Count == 0) { MessageBox.Show(this, msg.Trim(), Text, MessageBoxButtons.OK, MessageBoxIcon.Warning); return; }
+            string msg = salvos.Count == 0 ? "" : salvos.Count == 1 ? "PDF grifado salvo em:\n" + salvos[0] : salvos.Count + " PDFs grifados salvos em:\n" + Path.GetDirectoryName(salvos[0]);
+            if (semGrifo.Count > 0) msg += "\n\nNenhum trecho foi encontrado em: " + string.Join(", ", semGrifo) + (juntar ? " (entrou sem grifos)." : " (salvo sem grifos).");
+            if (erros.Count > 0) msg += "\n\n" + string.Join("\n", erros);
+            if (salvos.Count == 0) { MessageBox.Show(this, msg.Trim(), Text, MessageBoxButtons.OK, MessageBoxIcon.Warning); return; }
             if (MessageBox.Show(this, msg + "\n\nAbrir agora?", Text, MessageBoxButtons.YesNo, MessageBoxIcon.Information) == DialogResult.Yes)
             {
                 try
                 {
-                    if (destinos.Count == 1) Process.Start(new ProcessStartInfo(destinos.Values.First()) { UseShellExecute = true });
-                    else Process.Start("explorer.exe", "\"" + Path.GetDirectoryName(destinos.Values.First()) + "\"");
+                    if (salvos.Count == 1) Process.Start(new ProcessStartInfo(salvos[0]) { UseShellExecute = true });
+                    else Process.Start("explorer.exe", "\"" + Path.GetDirectoryName(salvos[0]) + "\"");
                 }
                 catch (Exception ex) { MessageBox.Show(this, "Não consegui abrir: " + ex.Message, Text); }
             }
