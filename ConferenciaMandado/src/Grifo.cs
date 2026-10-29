@@ -32,7 +32,8 @@ namespace ConferenciaMandado
             // interdição
             { "sentenca", new Categoria { Nome = "Sentença", R = .85, G = .85, B = .85 } },
             { "decreto", new Categoria { Nome = "Decreta a interdição", R = 1, G = .6, B = .6 } },
-            { "termo", new Categoria { Nome = "Termo de compromisso", R = .95, G = .75, B = .95 } },
+            { "motivo", new Categoria { Nome = "Motivo da interdição", R = 1, G = .55, B = .3 } },
+            { "termo", new Categoria { Nome = "Termo de curatela / compromisso", R = .95, G = .75, B = .95 } },
             { "curador", new Categoria { Nome = "Curador", R = .55, G = .88, B = .55 } },
             { "interditado", new Categoria { Nome = "Interditado", R = .8, G = .72, B = 1 } },
             { "assinatura", new Categoria { Nome = "Assinatura eletrônica", R = .75, G = .9, B = .45 } },

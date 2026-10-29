@@ -25,9 +25,10 @@ COMO USAR
 ITENS CONFERIDOS
 Divórcio: força de mandado · nome que a parte voltará a assinar ·
   divisão de bens · trânsito em julgado (e justiça gratuita, só informativo)
-Interdição: sentença · decreta a interdição · força de mandado ou mandado
-  do juiz · termo de compromisso (exigido quando a sentença tem força de
-  mandado) · qualificação do curador · qualificação do interditado (nome,
+Interdição: sentença · decreta a interdição · motivo da interdição (doença
+  física ou mental, na sentença, no mandado ou na petição inicial) · força
+  de mandado ou mandado do juiz · termo de curatela ou de compromisso (um
+  dos dois; exigido quando a sentença tem força de mandado) · qualificação do curador · qualificação do interditado (nome,
   estado civil, profissão, nacionalidade e endereço em Betim) · trânsito em
   julgado · justiça gratuita · assinatura eletrônica (se o documento for
   digital)

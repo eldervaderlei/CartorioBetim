@@ -9,7 +9,7 @@ Programa para Windows 10/11 (.exe único, sem instalação, funciona offline) qu
 
 - PDF com texto: lido com PdfPig.
 - PDF escaneado / foto: OCR nativo do Windows (`Windows.Media.Ocr` + `Windows.Data.Pdf`).
-Interdição: sentença, decreta a interdição, força de mandado ou mandado do juiz, termo de compromisso, qualificação do curador e do interditado (endereço em Betim), trânsito em julgado, justiça gratuita e assinatura eletrônica.
+Interdição: sentença, decreta a interdição, motivo da interdição, força de mandado ou mandado do juiz, termo de curatela ou de compromisso, qualificação do curador e do interditado (endereço em Betim), trânsito em julgado, justiça gratuita e assinatura eletrônica.
 
 - Regras: `src/Engine/divorcio.js` (motor da versão HTML, com as funções básicas) e `src/Engine/interdicao.js`, executados com Jint.
 - PDF grifado: anotações de destaque acrescentadas ao final do PDF original (`src/Grifo.cs`).

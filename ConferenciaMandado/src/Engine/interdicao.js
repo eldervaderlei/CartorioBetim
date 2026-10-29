@@ -53,15 +53,41 @@ function intMandado(doc) {
 }
 
 // ---------- 4. Termo de compromisso ----------
+// termo de curatela ou termo de compromisso: os dois trazem a mesma coisa, basta um
 function intTermo(doc, mand) {
-  const hits = findAll(doc, /\btermo\s+de\s+(?:compromisso|curatela)\b|\bcompromisso\s+de\s+curador\w*|\b(?:prestou|prestado|presta|assinou|firmou)\s+(?:o\s+)?compromisso\b|\bcompromisso\s+(?:legal\s+)?de\s+bem\s+e\s+fielmente\b|\bbem\s+e\s+fielmente\s+(?:desempenhar|exercer|cumprir)/g);
+  const hits = findAll(doc, /\btermo\s+de\s+(?:compromisso|curatela)\b|\bcertidao\s*!?\s*(?:\/\s*)?(?:termo\s+)?de\s+curatela\b|\bcompromisso\s+de\s+(?:curador\w*|curatela)\b|\b(?:prestou|prestado|presta|assinou|firmou|deferiu)\s+(?:o\s+)?compromisso\b|\bcompromisso\s+(?:legal\s+)?de\s+bem\s+e\s+fielmente\b|\bbem\s+e\s+fielmente\s+(?:desempenhar|exercer|cumprir)|\brecebido\s+pel[oa](?:\(a\))?\s+curador\w*(?:\(a\))?\s+o\s+compromisso/g);
   const futuro = /\b(?:lavre-se|lavrar|expeca-se|expedir|intime-se|intimem-se|prestar|para\s+(?:assinar|firmar)|devera|apos|mediante|aguarde-se|providencie)\b[^.;]{0,40}$/;
   const reais = hits.filter(h => !futuro.test(doc.norm.slice(Math.max(0, h.s - 60), h.s)));
   const exigido = mand.tipo === 'forca' || !mand.tipo;
-  if (reais.length) return { status: 'ok', summary: 'Termo de compromisso do curador encontrado.', hits: reais };
+  if (reais.length) return { status: 'ok', summary: 'Termo de curatela / compromisso do curador encontrado.', hits: reais };
   if (!exigido) return { status: 'na', summary: 'Não exigido: a sentença não tem força de mandado e há mandado do juiz.' + (hits.length ? ' (O termo é citado no processo.)' : ''), hits };
-  if (hits.length) return { status: 'warn', summary: 'O termo de compromisso só aparece como providência futura (ex.: “lavre-se o termo de compromisso”). Como a sentença tem força de mandado, é necessário o termo assinado.', hits };
-  return { status: 'missing', summary: 'Não encontrei o termo de compromisso do curador. Ele é necessário porque a sentença tem força de mandado.', hits: [] };
+  if (hits.length) return { status: 'warn', summary: 'O termo de curatela / compromisso só aparece como providência futura (ex.: “lavre-se o termo”). Como a sentença tem força de mandado, é necessário o termo assinado.', hits };
+  return { status: 'missing', summary: 'Não encontrei o termo de curatela nem o termo de compromisso do curador. Um deles é necessário porque a sentença tem força de mandado.', hits: [] };
+}
+
+// ---------- Motivo da interdição (doença física ou mental) ----------
+const MOT_MENTAL = /\b(?:alzheimer|demencia\w*|esquizofreni\w*|autismo|autista|espectro\s+autista|transtorno\w*(?:\s+\w+){0,3}|retardo\s+mental|deficiencia\s+(?:intelectual|mental|cognitiva)|doenca\s+mental|enfermidade\s+mental|deficit\s+cognitivo|declinio\s+cognitivo|psicose|psicotic\w*|bipolar|sindrome\s+de\s+down|oligofreni\w*|dependencia\s+quimica|alcoolismo|toxicomania)\b|\bcid\s*(?:-?\s*1[01])?\s*[-:]?\s*f\s*\d{2}/;
+const MOT_FISICA = /\b(?:avc|acidente\s+vascular\s+(?:cerebral|encefalico)|paralisia\s+cerebral|parkinson|esclerose\w*(?:\s+\w+){0,2}|tetraplegi\w*|paraplegi\w*|hidrocefalia|epilepsia|sequelas?\s+(?:neurologic\w*|de\s+\w+)|estado\s+vegetativo|coma|deficiencia\s+(?:fisica|multipla|visual|auditiva)|cancer|neoplasia|sindrome\s+de\s+[a-z\-]+|poliomielite|cegueira|surdez)\b/;
+// genéricos: contam como motivo, mas não dizem se é físico ou mental
+const MOT_GERAL = /\b(?:doenca\s+(?:grave|degenerativa|neurologica|incuravel|cronica)|enfermidade\s+grave)\b|\bcid\s*(?:-?\s*1[01])?\s*[-:]?\s*[a-eg-z]\s*\d{2}/;
+function intMotivo(doc) {
+  const hits = uniqHits([...findAll(doc, new RegExp(MOT_MENTAL.source, 'g')), ...findAll(doc, new RegExp(MOT_FISICA.source, 'g')), ...findAll(doc, new RegExp(MOT_GERAL.source, 'g'))]);
+  const geral = findAll(doc, /\b(?:incapa\w+|impossibilitad\w+|impedid\w+)\b[^.;]{0,80}?\b(?:em\s+razao|em\s+decorrencia|por\s+(?:ser\s+)?portador\w*|devido|por\s+causa)\b[^.;]{0,80}/g);
+  const tipo = hs => {
+    const t = hs.map(h => doc.norm.slice(h.s, h.e)).join(' ');
+    const m = MOT_MENTAL.test(t), f = MOT_FISICA.test(t);
+    return m && f ? 'doença física e mental' : m ? 'doença/deficiência mental' : f ? 'doença/deficiência física' : 'doença';
+  };
+  const nomes = hs => [...new Set(hs.map(h => doc.orig.slice(...origRange(doc, h)).replace(/\s+/g, ' ').trim()))].slice(0, 4).join(', ');
+  // vale o que estiver na sentença, no mandado ou na petição inicial (a sentença/mandado tem prioridade no trecho mostrado)
+  if (hits.length) {
+    const naDecisao = hits.filter(h => rankOf(doc, h) <= 1), usados = naDecisao.length ? naDecisao : porRank(doc, hits);
+    const onde = naDecisao.length ? '' : ' Encontrado fora da sentença/mandado (ex.: na petição inicial).';
+    return { status: 'ok', summary: 'Motivo informado: ' + tipo(usados) + ' (' + nomes(usados) + ').' + onde, hits: usados };
+  }
+  const g0 = geral;
+  if (g0.length) return { status: 'warn', summary: 'Os documentos falam da incapacidade, mas não achei a doença ou deficiência que a causa. Confira o motivo.', hits: g0 };
+  return { status: 'missing', summary: 'Não encontrei o motivo da interdição (doença física ou mental) na sentença, no mandado nem na petição inicial.', hits: [] };
 }
 
 // ---------- 5 e 6. Qualificação do curador e do interditado ----------
@@ -262,8 +288,9 @@ function conferir(raw, ctx) {
   const itens = [
     { key: 'sentenca', label: 'Sentença', ...intSentenca(doc) },
     { key: 'decreto', label: 'Decreta a interdição', ...intDecreto(doc) },
+    { key: 'motivo', label: 'Motivo da interdição', ...intMotivo(doc) },
     { key: 'mandado', label: 'Força de mandado ou mandado do juiz', ...mand },
-    { key: 'termo', label: 'Termo de compromisso', ...intTermo(doc, mand) },
+    { key: 'termo', label: 'Termo de curatela / compromisso', ...intTermo(doc, mand) },
     { key: 'curador', label: 'Qualificação do curador', ...intQualificacao(doc, 'curador', pp.curador) },
     { key: 'interditado', label: 'Qualificação do interditado', ...intQualificacao(doc, 'interditado', pp.interditado) },
     { key: 'transito', label: 'Trânsito em julgado', ...checkTransito(doc) },

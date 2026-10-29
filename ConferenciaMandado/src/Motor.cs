@@ -16,7 +16,7 @@ namespace ConferenciaMandado
         public static readonly List<TipoConferencia> Tipos = new List<TipoConferencia>
         {
             new TipoConferencia { Chave = "divorcio", Nome = "Divórcio", Itens = new[] { "força de mandado", "nome que a parte voltará a assinar", "divisão de bens", "trânsito em julgado" } },
-            new TipoConferencia { Chave = "interdicao", Nome = "Interdição (curatela)", Itens = new[] { "sentença", "decreta a interdição", "força de mandado ou mandado do juiz", "termo de compromisso", "qualificação do curador", "qualificação do interditado", "trânsito em julgado", "justiça gratuita", "assinatura eletrônica" } },
+            new TipoConferencia { Chave = "interdicao", Nome = "Interdição (curatela)", Itens = new[] { "sentença", "decreta a interdição", "motivo da interdição (doença física ou mental)", "força de mandado ou mandado do juiz", "termo de curatela ou de compromisso", "qualificação do curador", "qualificação do interditado", "trânsito em julgado", "justiça gratuita", "assinatura eletrônica" } },
         };
 
         static readonly Dictionary<string, Engine> _js = new Dictionary<string, Engine>();
